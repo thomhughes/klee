@@ -163,14 +163,69 @@ public:
     Sgt, ///< Not used in canonical form
     Sge, ///< Not used in canonical form
 
-    LastKind=Sge,
+    // Floating point
+    FConstant,
+
+    // Special
+    FSelect,
+
+    // Casting,
+    FExt,
+    UToF,
+    SToF,
+    ExplicitFloat,
+
+    // Special functions
+    FAbs,
+    FSqrt,
+    FNearbyInt,
+
+    // Arithmetic
+    FNeg,
+    FAdd,
+    FSub,
+    FMul,
+    FDiv,
+
+    // Special functions
+    FRem,
+    FMin,
+    FMax,
+
+    // Compare
+    FOrd,
+    FUno,
+    FUeq,
+    FOeq,
+    FUgt,
+    FOgt,
+    FUge,
+    FOge,
+    FUlt,
+    FOlt,
+    FUle,
+    FOle,
+    FUne,
+    FOne,
+
+    LastKind=FOne,
 
     CastKindFirst=ZExt,
     CastKindLast=SExt,
     BinaryKindFirst=Add,
     BinaryKindLast=Sge,
     CmpKindFirst=Eq,
-    CmpKindLast=Sge
+    CmpKindLast=Sge,
+
+    FKindFirst=FConstant,
+    FCastKindFirst=FExt,
+    FCastKindLast=ExplicitFloat,
+    FUnaryCastFirst=FAbs,
+    FUnaryCastLast=FNeg,
+    FBinaryCastFist=FAdd,
+    FBinaryCastLast=FMax,
+    FCmpKindFirst=FOrd,
+    FCmpKindLast=FOne
   };
 
   /// @brief Required by klee::ref-managed objects
