@@ -128,6 +128,9 @@ public:
     // Casting,
     ZExt,
     SExt,
+    FToU,
+    FToS,
+    ExplicitInt,
 
     // Bit
     Not,
@@ -211,7 +214,7 @@ public:
     LastKind=FOne,
 
     CastKindFirst=ZExt,
-    CastKindLast=SExt,
+    CastKindLast=ExplicitInt,
     BinaryKindFirst=Add,
     BinaryKindLast=Sge,
     CmpKindFirst=Eq,
@@ -220,10 +223,10 @@ public:
     FKindFirst=FConstant,
     FCastKindFirst=FExt,
     FCastKindLast=ExplicitFloat,
-    FUnaryCastFirst=FAbs,
-    FUnaryCastLast=FNeg,
-    FBinaryCastFist=FAdd,
-    FBinaryCastLast=FMax,
+    FUnaryKindFirst=FAbs,
+    FUnaryKindLast=FNeg,
+    FBinaryKindFirst=FAdd,
+    FBinaryKindLast=FMax,
     FCmpKindFirst=FOrd,
     FCmpKindLast=FOne
   };
@@ -411,11 +414,20 @@ inline std::stringstream &operator<<(std::stringstream &os, const Expr::Kind kin
 }
 
 // Utility classes
-
-class NonConstantExpr : public Expr {
+class IExpr : public Expr {
 public:
   static bool classof(const Expr *E) {
-    return E->getKind() != Expr::Constant;
+    Kind k = E->getKind();
+    return k < Expr::FKindFirst;
+  }
+  static bool classof(const IExpr *) { return true; }
+};
+
+class NonConstantExpr : public IExpr {
+public:
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return k != Expr::FConstant && k != Expr::Constant;
   }
   static bool classof(const NonConstantExpr *) { return true; }
 };
@@ -1047,6 +1059,7 @@ COMPARISON_EXPR_CLASS(Sgt)
 COMPARISON_EXPR_CLASS(Sge)
 
 // Terminal Exprs
+class FConstantExpr;
 
 class ConstantExpr : public Expr {
 public:
@@ -1198,7 +1211,346 @@ public:
 
   ref<ConstantExpr> Neg();
   ref<ConstantExpr> Not();
+
+  // Operations that take an int and return a float
+  ref<FConstantExpr> UToF(Width W);
+  ref<FConstantExpr> SToF(Width W);
+  ref<FConstantExpr> ExplicitFloat(Width W);
 };
+
+// Floating point
+
+// Utility classes
+class FExpr : public Expr {
+public:
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return k < Expr::FKindFirst;
+  }
+  static bool classof(const IExpr *) { return true; }
+};
+
+class FNonConstantExpr : public FExpr {
+public:
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return k != Expr::FConstant && k != Expr::Constant;
+  }
+  static bool classof(const NonConstantExpr *) { return true; }
+};
+
+class FBinaryExpr : public FNonConstantExpr {
+public:
+  ref<Expr> left, right;
+
+public:
+  unsigned getNumKids() const { return 2; }
+  ref<Expr> getKid(unsigned i) const {
+    if(i == 0)
+      return left;
+    if(i == 1)
+      return right;
+    return 0;
+  }
+
+protected:
+  FBinaryExpr(const ref<Expr> &l, const ref<Expr> &r) : left(l), right(r) {}
+
+public:
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return Expr::FBinaryKindFirst <= k && k <= Expr::FBinaryKindLast;
+  }
+  static bool classof(const BinaryExpr *) { return true; }
+};
+
+class FUnaryExpr : public FNonConstantExpr {
+public:
+  ref<Expr> src;
+
+public:
+  unsigned getNumKids() const { return 2; }
+  ref<Expr> getKid(unsigned i) const { return (i == 0) ? src : 0; }
+
+protected:
+  FUnaryExpr(const ref<Expr> &s) : src(s) {}
+
+public:
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return Expr::FUnaryKindFirst <= k && k <= Expr::FUnaryKindLast;
+  }
+  static bool classof(const BinaryExpr *) { return true; }
+};
+
+
+class FCmpExpr : public FBinaryExpr {
+
+protected:
+  FCmpExpr(ref<Expr> l, ref<Expr> r) : FBinaryExpr(l,r) {}
+
+public:
+  Width getWidth() const { return Bool; }
+
+  static bool classof(const Expr *E) {
+    Kind k = E->getKind();
+    return Expr::FCmpKindFirst <= k && k <= Expr::FCmpKindLast;
+  }
+  static bool classof(const CmpExpr *) { return true; }
+};
+
+/// Class representing an if-then-else expression (floating point).
+class FSelectExpr : public FNonConstantExpr {
+public:
+  static const Kind kind = Select;
+  static const unsigned numKids = 3;
+
+public:
+  ref<Expr> cond, trueExpr, falseExpr;
+
+public:
+  static ref<Expr> alloc(const ref<Expr> &c, const ref<Expr> &t,
+                         const ref<Expr> &f) {
+    ref<Expr> r(new FSelectExpr(c, t, f));
+    r->computeHash();
+    return r;
+  }
+
+  static ref<Expr> create(ref<Expr> c, ref<Expr> t, ref<Expr> f);
+
+  Width getWidth() const { return trueExpr->getWidth(); }
+  Kind getKind() const { return Select; }
+
+  unsigned getNumKids() const { return numKids; }
+  ref<Expr> getKid(unsigned i) const {
+    switch(i) {
+    case 0: return cond;
+    case 1: return trueExpr;
+    case 2: return falseExpr;
+    default: return 0;
+    }
+  }
+
+  static bool isValidKidWidth(unsigned kid, Width w) {
+    if (kid == 0)
+      return w == Bool;
+    else
+      return true;
+  }
+
+  virtual ref<Expr> rebuild(ref<Expr> kids[]) const {
+    return create(kids[0], kids[1], kids[2]);
+  }
+
+private:
+  FSelectExpr(const ref<Expr> &c, const ref<Expr> &t, const ref<Expr> &f)
+      : cond(c), trueExpr(t), falseExpr(f) {}
+
+public:
+  static bool classof(const Expr *E) {
+    return E->getKind() == Expr::Select;
+  }
+  static bool classof(const SelectExpr *) { return true; }
+
+protected:
+  virtual int compareContents(const Expr &b) const {
+    // No attributes to compare.
+    return 0;
+  }
+};
+
+// Casting
+class FCastExpr : public FNonConstantExpr {
+public:
+  ref<Expr> src;
+  Width width;
+
+public:
+  FCastExpr(const ref<Expr> &e, Width w) : src(e), width(w) {}
+
+  Width getWidth() const { return width; }
+
+  unsigned getNumKids() const { return 1; }
+  ref<Expr> getKid(unsigned i) const { return (i==0) ? src : 0; }
+
+  static bool needsResultType() { return true; }
+
+  int compareContents(const Expr &b) const {
+    const CastExpr &eb = static_cast<const CastExpr&>(b);
+    if (width != eb.width) return width < eb.width ? -1 : 1;
+    return 0;
+  }
+
+  virtual unsigned computeHash();
+
+  static bool classof(const Expr *E) {
+    Expr::Kind k = E->getKind();
+    return Expr::FCastKindFirst <= k && k <= Expr::FCastKindLast;
+  }
+  static bool classof(const CastExpr *) { return true; }
+};
+
+#define FCAST_EXPR_CLASS(_class_kind)                             \
+class _class_kind ## Expr : public FCastExpr {                    \
+public:                                                          \
+  static const Kind kind = _class_kind;                          \
+  static const unsigned numKids = 1;                             \
+public:                                                          \
+    _class_kind ## Expr(ref<Expr> e, Width w) : FCastExpr(e,w) {} \
+    static ref<Expr> alloc(const ref<Expr> &e, Width w) {        \
+      ref<Expr> r(new _class_kind ## Expr(e, w));                \
+      r->computeHash();                                          \
+      return r;                                                  \
+    }                                                            \
+    static ref<Expr> create(const ref<Expr> &e, Width w);        \
+    Kind getKind() const { return _class_kind; }                 \
+    virtual ref<Expr> rebuild(ref<Expr> kids[]) const {          \
+      return create(kids[0], width);                             \
+    }                                                            \
+                                                                 \
+    static bool classof(const Expr *E) {                         \
+      return E->getKind() == Expr::_class_kind;                  \
+    }                                                            \
+    static bool classof(const  _class_kind ## Expr *) {          \
+      return true;                                               \
+    }                                                            \
+};                                                               \
+
+FCAST_EXPR_CLASS(FExt)
+FCAST_EXPR_CLASS(UToF)
+FCAST_EXPR_CLASS(SToF)
+
+// Unary operations
+#define FUNARY_EXPR_CLASS(_class_kind)                                         \
+  class _class_kind##Expr : public FUnaryExpr {                                \
+  public:                                                                      \
+    static const Kind kind = _class_kind;                                      \
+    static const unsigned numKids = 1;                                         \
+                                                                               \
+  public:                                                                      \
+    _class_kind##Expr(const ref<Expr> &s)                                      \
+        : FUnaryExpr(s) {}                                                     \
+    static ref<Expr> alloc(const ref<Expr> &s) {                               \
+      ref<Expr> res(new _class_kind##Expr(s));                                 \
+      res->computeHash();                                                      \
+      return res;                                                              \
+    }                                                                          \
+    static ref<Expr> create(const ref<Expr> &s);                               \
+    Width getWidth() const { return src->getWidth(); }                         \
+    Kind getKind() const { return _class_kind; }                               \
+    virtual ref<Expr> rebuild(ref<Expr> kids[]) const {                        \
+      return create(kids[0]);                                                  \
+    }                                                                          \
+                                                                               \
+    static bool classof(const Expr *E) {                                       \
+      return E->getKind() == Expr::_class_kind;                                \
+    }                                                                          \
+    static bool classof(const _class_kind##Expr *) { return true; }            \
+                                                                               \
+  protected:                                                                   \
+    virtual int compareContents(const Expr &b) const {                         \
+      /* No attributes to compare.*/                                           \
+      return 0;                                                                \
+    }                                                                          \
+  };
+
+FUNARY_EXPR_CLASS(FAbs);
+FUNARY_EXPR_CLASS(FSqrt);
+FUNARY_EXPR_CLASS(FNearbyInt);
+FUNARY_EXPR_CLASS(FNeg);
+
+// Arithmetic/Bit Exprs
+
+#define FARITHMETIC_EXPR_CLASS(_class_kind)                                     \
+  class _class_kind##Expr : public FBinaryExpr {                                \
+  public:                                                                      \
+    static const Kind kind = _class_kind;                                      \
+    static const unsigned numKids = 2;                                         \
+                                                                               \
+  public:                                                                      \
+    _class_kind##Expr(const ref<Expr> &l, const ref<Expr> &r)                  \
+        : FBinaryExpr(l, r) {}                                                  \
+    static ref<Expr> alloc(const ref<Expr> &l, const ref<Expr> &r) {           \
+      ref<Expr> res(new _class_kind##Expr(l, r));                              \
+      res->computeHash();                                                      \
+      return res;                                                              \
+    }                                                                          \
+    static ref<Expr> create(const ref<Expr> &l, const ref<Expr> &r);           \
+    Width getWidth() const { return left->getWidth(); }                        \
+    Kind getKind() const { return _class_kind; }                               \
+    virtual ref<Expr> rebuild(ref<Expr> kids[]) const {                        \
+      return create(kids[0], kids[1]);                                         \
+    }                                                                          \
+                                                                               \
+    static bool classof(const Expr *E) {                                       \
+      return E->getKind() == Expr::_class_kind;                                \
+    }                                                                          \
+    static bool classof(const _class_kind##Expr *) { return true; }            \
+                                                                               \
+  protected:                                                                   \
+    virtual int compareContents(const Expr &b) const {                         \
+      /* No attributes to compare.*/                                           \
+      return 0;                                                                \
+    }                                                                          \
+  };
+
+FARITHMETIC_EXPR_CLASS(FAdd)
+FARITHMETIC_EXPR_CLASS(FSub);
+FARITHMETIC_EXPR_CLASS(FMul);
+FARITHMETIC_EXPR_CLASS(FDiv);
+FARITHMETIC_EXPR_CLASS(FRem);
+FARITHMETIC_EXPR_CLASS(FMin);
+FARITHMETIC_EXPR_CLASS(FMax);
+
+// Comparison Exprs
+
+#define FCOMPARISON_EXPR_CLASS(_class_kind)                                     \
+  class _class_kind##Expr : public FCmpExpr {                                   \
+  public:                                                                      \
+    static const Kind kind = _class_kind;                                      \
+    static const unsigned numKids = 2;                                         \
+                                                                               \
+  public:                                                                      \
+    _class_kind##Expr(const ref<Expr> &l, const ref<Expr> &r)                  \
+        : FCmpExpr(l, r) {}                                                     \
+    static ref<Expr> alloc(const ref<Expr> &l, const ref<Expr> &r) {           \
+      ref<Expr> res(new _class_kind##Expr(l, r));                              \
+      res->computeHash();                                                      \
+      return res;                                                              \
+    }                                                                          \
+    static ref<Expr> create(const ref<Expr> &l, const ref<Expr> &r);           \
+    Kind getKind() const { return _class_kind; }                               \
+    virtual ref<Expr> rebuild(ref<Expr> kids[]) const {                        \
+      return create(kids[0], kids[1]);                                         \
+    }                                                                          \
+                                                                               \
+    static bool classof(const Expr *E) {                                       \
+      return E->getKind() == Expr::_class_kind;                                \
+    }                                                                          \
+    static bool classof(const _class_kind##Expr *) { return true; }            \
+                                                                               \
+  protected:                                                                   \
+    virtual int compareContents(const Expr &b) const {                         \
+      /* No attributes to compare. */                                          \
+      return 0;                                                                \
+    }                                                                          \
+  };
+
+FCOMPARISON_EXPR_CLASS(FOrd);
+FCOMPARISON_EXPR_CLASS(FUno);
+FCOMPARISON_EXPR_CLASS(FUeq);
+FCOMPARISON_EXPR_CLASS(FOeq);
+FCOMPARISON_EXPR_CLASS(FUgt);
+FCOMPARISON_EXPR_CLASS(FOgt);
+FCOMPARISON_EXPR_CLASS(FUge);
+FCOMPARISON_EXPR_CLASS(FOge);
+FCOMPARISON_EXPR_CLASS(FUlt);
+FCOMPARISON_EXPR_CLASS(FOlt);
+FCOMPARISON_EXPR_CLASS(FUle);
+FCOMPARISON_EXPR_CLASS(FOle);
+FCOMPARISON_EXPR_CLASS(FUne);
+FCOMPARISON_EXPR_CLASS(FOne);
+
 
 // Implementations
 
@@ -1221,6 +1573,139 @@ inline bool Expr::isFalse() const {
     return CE->isFalse();
   return false;
 }
+
+class FConstantExpr : public FExpr {
+public:
+  static const Kind kind = Constant;
+  static const unsigned numKids = 0;
+
+private:
+  llvm::APInt value;
+
+  FConstantExpr(const llvm::APInt &v) : value(v) {}
+
+public:
+  ~FConstantExpr() {}
+
+  Width getWidth() const { return value.getBitWidth(); }
+  Kind getKind() const { return Constant; }
+
+  unsigned getNumKids() const { return 0; }
+  ref<Expr> getKid(unsigned i) const { return 0; }
+
+  /// getAPValue - Return the arbitrary precision value directly.
+  ///
+  /// Clients should generally not use the APInt value directly and instead use
+  /// native ConstantExpr APIs.
+  const llvm::APInt &getAPValue() const { return value; }
+
+  /// toString - Return the constant value as a string
+  /// \param Res specifies the string for the result to be placed in
+  /// \param radix specifies the base (e.g. 2,10,16). The default is base 10
+  void toString(std::string &Res, unsigned radix = 10) const;
+
+  int compareContents(const Expr &b) const {
+    const FConstantExpr &cb = static_cast<const FConstantExpr &>(b);
+    if (getWidth() != cb.getWidth())
+      return getWidth() < cb.getWidth() ? -1 : 1;
+    if (value == cb.value)
+      return 0;
+    return value.ult(cb.value) ? -1 : 1;
+  }
+
+  virtual ref<Expr> rebuild(ref<Expr> kids[]) const {
+    assert(0 && "rebuild() on ConstantExpr");
+    return const_cast<FConstantExpr *>(this);
+  }
+
+  virtual unsigned computeHash();
+
+  static ref<Expr> fromMemory(void *address, Width w);
+  void toMemory(void *address);
+
+  static ref<FConstantExpr> alloc(const llvm::APInt &v) {
+    ref<FConstantExpr> r(new FConstantExpr(v));
+    r->computeHash();
+    return r;
+  }
+
+  static ref<FConstantExpr> alloc(const llvm::APFloat &f) {
+    return alloc(f.bitcastToAPInt()); // TODO: Implement properly converting APFLoat into fixed point
+  }
+
+  static ref<FConstantExpr> alloc(uint64_t v, Width w) {
+    return alloc(llvm::APInt(w, v));
+  }
+
+  static ref<FConstantExpr> create(uint64_t v, Width w) {
+#ifndef NDEBUG
+    if (w <= 64)
+      assert(v == bits64::truncateToNBits(v, w) && "invalid constant");
+#endif
+    return alloc(v, w);
+  }
+
+  static bool classof(const Expr *E) { return E->getKind() == Expr::Constant; }
+  static bool classof(const ConstantExpr *) { return true; }
+
+  /* Utility Functions */
+
+  /// isZero - Is this a constant zero.
+  bool isZero() const { return getAPValue().isMinValue(); }
+
+  /// isTrue - Is this the true expression.
+  bool isTrue() const {
+    return (getWidth() == Expr::Bool && value.getBoolValue() == true);
+  }
+
+  /// isFalse - Is this the false expression.
+  bool isFalse() const {
+    return (getWidth() == Expr::Bool && value.getBoolValue() == false);
+  }
+
+  /// isAllOnes - Is this constant all ones.
+  bool isAllOnes() const { return getAPValue().isAllOnesValue(); }
+
+  /* Constant Operations */
+
+  ref<FConstantExpr> FExt(Width W, llvm::APFloat::roundingMode RM);
+  ref<FConstantExpr> FNeg();
+  ref<FConstantExpr> FAbs();
+  ref<FConstantExpr> FSqrt();
+  ref<FConstantExpr> FNearbyInt();
+
+  // Binary operations
+  ref<FConstantExpr> FAdd(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FSub(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FMul(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FDiv(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FRem(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FMin(const ref<FConstantExpr> &RHS);
+  ref<FConstantExpr> FMax(const ref<FConstantExpr> &RHS);
+
+  // Operations that take a float and return an int
+  ref<ConstantExpr> FToU(Width W);
+  ref<ConstantExpr> FToS(Width W);
+  ref<ConstantExpr> FpClassify();
+  ref<ConstantExpr> FIsFinite();
+  ref<ConstantExpr> FIsNan();
+  ref<ConstantExpr> FIsInf();
+  ref<ConstantExpr> FOrd(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUno(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUeq(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOeq(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUgt(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOgt(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUge(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOge(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUlt(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOlt(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUle(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOle(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FUne(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> FOne(const ref<FConstantExpr> &RHS);
+  ref<ConstantExpr> ExplicitInt(Width W);
+};
 
 } // End klee namespace
 
