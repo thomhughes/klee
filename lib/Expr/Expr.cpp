@@ -167,6 +167,40 @@ void Expr::printKind(llvm::raw_ostream &os, Kind k) {
     X(Sle);
     X(Sgt);
     X(Sge);
+    X(FConstant);
+    X(FSelect);
+    X(FExt);
+    X(UToF);
+    X(SToF);
+    X(FAbs);
+    X(FSqrt);
+    X(FNearbyInt);
+    X(FpClassify);
+    X(FIsFinite);
+    X(FIsNan);
+    X(FIsInf);
+    X(FNeg);
+    X(FAdd);
+    X(FSub);
+    X(FMul);
+    X(FDiv);
+    X(FRem);
+    X(FMin);
+    X(FMax);
+    X(FOrd);
+    X(FUno);
+    X(FUeq);
+    X(FOeq);
+    X(FUgt);
+    X(FOgt);
+    X(FUge);
+    X(FOge);
+    X(FUlt);
+    X(FOlt);
+    X(FUle);
+    X(FOle);
+    X(FUne);
+    X(FOne);
 #undef X
   default:
     assert(0 && "invalid kind");
@@ -227,11 +261,28 @@ unsigned NotExpr::computeHash() {
   return hashValue;
 }
 
+unsigned FConstantExpr::computeHash() {
+  Expr::Width w = getWidth();
+  if (w <= 64)
+    hashValue = value.getLimitedValue() ^ (w * MAGIC_HASH_CONSTANT);
+  else
+    hashValue = hash_value(value) ^ (w * MAGIC_HASH_CONSTANT);
+
+  return hashValue;
+}
+
+unsigned FCastExpr::computeHash() {
+  unsigned res = getWidth() * Expr::MAGIC_HASH_CONSTANT;
+  hashValue = res ^ src->hash() * Expr::MAGIC_HASH_CONSTANT;
+  return hashValue;
+}
+
 ref<Expr> Expr::createFromKind(Kind k, std::vector<CreateArg> args) {
   unsigned numArgs = args.size();
   (void) numArgs;
 
   switch(k) {
+    case FConstant:
     case Constant:
     case Extract:
     case Read:
@@ -251,6 +302,14 @@ ref<Expr> Expr::createFromKind(Kind k, std::vector<CreateArg> args) {
                                 args[1].expr,
                                 args[2].expr);
 
+    case FSelect:
+      assert(numArgs == 3 && args[0].isExpr() &&
+           args[1].isExpr() && args[2].isExpr() &&
+           "invalid args array for Select opcode");
+      return FSelectExpr::create(args[0].expr,
+                                args[1].expr,
+                                args[2].expr);
+
     case Concat: {
       assert(numArgs == 2 && args[0].isExpr() && args[1].isExpr() && 
              "invalid args array for Concat opcode");
@@ -264,7 +323,14 @@ ref<Expr> Expr::createFromKind(Kind k, std::vector<CreateArg> args) {
                args[0].isExpr() && args[1].isWidth() &&      \
                "invalid args array for given opcode");       \
       return T ## Expr::create(args[0].expr, args[1].width); \
-      
+
+#define UNARY_EXPR_CASE(T)                                  \
+      case T:                                               \
+        assert(numArgs == 1 &&                              \
+               args[0].isExpr() &&                          \
+               "invalid args array for given opcode");      \
+      return T ## Expr::create(args[0].expr);               \
+
 #define BINARY_EXPR_CASE(T)                                 \
       case T:                                               \
         assert(numArgs == 2 &&                              \
@@ -299,6 +365,39 @@ ref<Expr> Expr::createFromKind(Kind k, std::vector<CreateArg> args) {
       BINARY_EXPR_CASE(Sle);
       BINARY_EXPR_CASE(Sgt);
       BINARY_EXPR_CASE(Sge);
+
+      // Floating point
+      UNARY_EXPR_CASE(FAbs);
+      UNARY_EXPR_CASE(FSqrt);
+      UNARY_EXPR_CASE(FNearbyInt);
+      UNARY_EXPR_CASE(FpClassify);
+      UNARY_EXPR_CASE(FIsFinite);
+      UNARY_EXPR_CASE(FIsNan);
+      UNARY_EXPR_CASE(FIsInf);
+      UNARY_EXPR_CASE(FNeg);
+
+      BINARY_EXPR_CASE(FAdd)
+      BINARY_EXPR_CASE(FSub);
+      BINARY_EXPR_CASE(FMul);
+      BINARY_EXPR_CASE(FDiv);
+      BINARY_EXPR_CASE(FRem);
+      BINARY_EXPR_CASE(FMin);
+      BINARY_EXPR_CASE(FMax);
+
+      BINARY_EXPR_CASE(FOrd);
+      BINARY_EXPR_CASE(FUno);
+      BINARY_EXPR_CASE(FUeq);
+      BINARY_EXPR_CASE(FOeq);
+      BINARY_EXPR_CASE(FUgt);
+      BINARY_EXPR_CASE(FOgt);
+      BINARY_EXPR_CASE(FUge);
+      BINARY_EXPR_CASE(FOge);
+      BINARY_EXPR_CASE(FUlt);
+      BINARY_EXPR_CASE(FOlt);
+      BINARY_EXPR_CASE(FUle);
+      BINARY_EXPR_CASE(FOle);
+      BINARY_EXPR_CASE(FUne);
+      BINARY_EXPR_CASE(FOne);
   }
 }
 
@@ -494,6 +593,30 @@ ref<ConstantExpr> ConstantExpr::Sgt(const ref<ConstantExpr> &RHS) {
 
 ref<ConstantExpr> ConstantExpr::Sge(const ref<ConstantExpr> &RHS) {
   return ConstantExpr::alloc(value.sge(RHS->value), Expr::Bool);
+}
+
+ref <FConstantExpr> ConstantExpr::UToF(Width W) {
+    switch (W) {
+        case Expr::Fl32:
+            return FConstantExpr::alloc(value.zext(Expr::Fl32).shl(23));
+        case Expr::Fl64:
+            return FConstantExpr::alloc(value.zext(Expr::Fl64).shl(52));
+        default:
+            assert(0 && "Invalid width");
+            break;
+    }
+}
+
+ref <FConstantExpr> ConstantExpr::SToF(Width W) {
+    switch (W) {
+        case Expr::Fl32:
+            return FConstantExpr::alloc(value.sext(Expr::Fl32).shl(23));
+        case Expr::Fl64:
+            return FConstantExpr::alloc(value.sext(Expr::Fl64).shl(52));
+        default:
+            assert(0 && "Invalid width");
+            break;
+    }
 }
 
 /***/
@@ -737,6 +860,19 @@ ref<Expr> SExtExpr::create(const ref<Expr> &e, Width w) {
     return SExtExpr::alloc(e, w);
   }
 }
+
+#define FTOI_CAST_CREATE(_e_op, _op)                                                     \
+ref<Expr>  _e_op ::create(const ref<Expr> &e, Width w) {                                 \
+  if (FConstantExpr *ce = dyn_cast<FConstantExpr>(e))                                    \
+    return ce->_op(w);                                                                   \
+  return _e_op ## _create(e, w);                                                         \
+}
+
+static ref<Expr> FToUExpr_create(const ref<Expr> &e, Expr::Width w) { return FToUExpr::alloc(e,w); }
+static ref<Expr> FToSExpr_create(const ref<Expr> &e, Expr::Width w) { return FToSExpr::alloc(e,w); }
+
+FTOI_CAST_CREATE(FToUExpr, FToU);
+FTOI_CAST_CREATE(FToSExpr, FToS);
 
 /***/
 
@@ -1215,3 +1351,406 @@ CMPCREATE(UltExpr, Ult)
 CMPCREATE(UleExpr, Ule)
 CMPCREATE(SltExpr, Slt)
 CMPCREATE(SleExpr, Sle)
+
+/***/
+
+ref<Expr> FConstantExpr::fromMemory(void *address, Width width) {
+  switch (width) {
+  case Expr::Bool: return ConstantExpr::create(*(( uint8_t*) address), width);
+  case Expr::Int8: return ConstantExpr::create(*(( uint8_t*) address), width);
+  case Expr::Int16: return ConstantExpr::create(*((uint16_t*) address), width);
+  case Expr::Int32: return ConstantExpr::create(*((uint32_t*) address), width);
+  case Expr::Int64: return ConstantExpr::create(*((uint64_t*) address), width);
+  // FIXME: what about machines without x87 support?
+  default:
+    return ConstantExpr::alloc(
+        llvm::APInt(width,
+                    (width + llvm::APFloatBase::integerPartWidth - 1) /
+                        llvm::APFloatBase::integerPartWidth,
+                    (const uint64_t *)address));
+  }
+}
+
+void FConstantExpr::toMemory(void *address) {
+  assert(getWidth() == 64 && "Invalid FConstant width");
+  *((uint64_t*) address) = *(uint64_t*) value.getRawData();
+}
+
+void FConstantExpr::toString(std::string &Res, unsigned radix) const {
+  // TODO: Implement properly :)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+  Res = llvm::toString(value, radix, false);
+#else
+  Res = value.toString(radix, false);
+#endif
+}
+
+
+// TODO: FExt, FSqrt, FNearbyInt
+ref<FConstantExpr> FConstantExpr::FExt(Width W) {
+    return FConstantExpr::alloc(value);
+}
+
+ref<FConstantExpr> FConstantExpr::FNeg() {
+    return FConstantExpr::alloc(-value);
+}
+ref<FConstantExpr> FConstantExpr::FAbs() {
+    return FConstantExpr::alloc(value & ~APInt::getSignMask(getWidth()));
+}
+ref<FConstantExpr> FConstantExpr::FSqrt() {
+    return FConstantExpr::alloc(value.sqrt());
+}
+ref<FConstantExpr> FConstantExpr::FNearbyInt() {
+    // TODO: Round properly, make logic prettier
+    switch(getWidth()) {
+        case Expr::Fl32:
+            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(23).zext(getWidth()));
+        case Expr::Fl64:
+            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(52).zext(getWidth()));
+        default:
+            assert(0 && "Invalid width for nearby int");
+            break;
+    }
+}
+
+ref<FConstantExpr> FConstantExpr::FAdd(const ref<FConstantExpr> &RHS) {
+    return FConstantExpr::alloc(value + RHS->value);
+}
+ref<FConstantExpr> FConstantExpr::FSub(const ref<FConstantExpr> &RHS) {
+    return FConstantExpr::alloc(value - RHS->value);
+}
+ref<FConstantExpr> FConstantExpr::FMul(const ref<FConstantExpr> &RHS) {
+    return FConstantExpr::alloc(value - RHS->value);
+}
+ref<FConstantExpr> FConstantExpr::FDiv(const ref<FConstantExpr> &RHS) {
+    return FConstantExpr::alloc(value - RHS->value);
+}
+ref<FConstantExpr> FConstantExpr::FRem(const ref<FConstantExpr> &RHS) {
+    return FConstantExpr::alloc(value - RHS->value);
+}
+ref<FConstantExpr> FConstantExpr::FMin(const ref<FConstantExpr> &RHS) {
+    llvm::APInt min = value.slt(RHS->value) ? value : RHS->value;
+    return FConstantExpr::alloc(min);
+}
+ref<FConstantExpr> FConstantExpr::FMax(const ref<FConstantExpr> &RHS) {
+    llvm::APInt max = value.sgt(RHS->value) ? value : RHS->value;
+    return FConstantExpr::alloc(max);
+}
+
+ref<ConstantExpr> FConstantExpr::FToU(Width W) {
+    switch(getWidth()) {
+        case Expr::Fl32:
+            return ConstantExpr::alloc(value.lshr(23).getHiBits(Expr::Fl32 - 23).zextOrTrunc(W));
+        case Expr::Fl64:
+            return ConstantExpr::alloc(value.lshr(52).getHiBits(Expr::Fl64 - 52).zextOrTrunc(W));
+        default:
+            assert(0 && "Invalid width");
+            break;
+    }
+}
+ref<ConstantExpr> FConstantExpr::FToS(Width W) {
+    switch(getWidth()) {
+        case Expr::Fl32:
+            return ConstantExpr::alloc(value.ashr(23).getHiBits(Expr::Fl32 - 23).sextOrTrunc(W));
+        case Expr::Fl64:
+            return ConstantExpr::alloc(value.ashr(52).getHiBits(Expr::Fl64 - 52).sextOrTrunc(W));
+        default:
+            assert(0 && "Invalid width");
+            break;
+    }
+}
+
+// TODO: FPClassify, FIsFinite, FIsNan, FIsInf
+ref<ConstantExpr> FConstantExpr::FpClassify() {
+    return ConstantExpr::alloc(0, sizeof(int)*8);
+}
+ref<ConstantExpr> FConstantExpr::FIsFinite() {
+    return ConstantExpr::alloc(0, sizeof(int)*8);
+}
+ref<ConstantExpr> FConstantExpr::FIsNan() {
+    return ConstantExpr::alloc(0, sizeof(int)*8);
+}
+ref<ConstantExpr> FConstantExpr::FIsInf() {
+    return ConstantExpr::alloc(0, sizeof(int)*8);
+}
+
+// TODO: Unordered
+ref<ConstantExpr> FConstantExpr::FOrd(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(true, Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUno(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(false, Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUeq(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.eq(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOeq(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.eq(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUgt(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sgt(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOgt(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sgt(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUge(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sge(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOge(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sge(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUlt(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.slt(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOlt(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.slt(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUle(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sle(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOle(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.sle(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FUne(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.ne(RHS->value), Expr::Bool);
+}
+ref<ConstantExpr> FConstantExpr::FOne(const ref<FConstantExpr> &RHS) {
+    return ConstantExpr::alloc(value.ne(RHS->value), Expr::Bool);
+}
+
+/***/
+
+ref<Expr> FSelectExpr::create(ref<Expr> c, ref<Expr> t, ref<Expr> f) {
+    Expr::Width kt = t->getWidth();
+
+    assert(c->getWidth()==Bool && "type mismatch");
+    assert(kt==f->getWidth() && "type mismatch");
+
+    if (FConstantExpr *CE = dyn_cast<FConstantExpr>(c)) {
+        return CE->isTrue() ? t : f;
+    } else if (t==f) {
+        return t;
+    }
+
+    return FSelectExpr::alloc(c, t, f);
+}
+
+/***/
+
+#define FUCREATE(_e_op, _op) \
+ref<Expr>  _e_op ::create(const ref<Expr> &s) {                         \
+  if (FConstantExpr *c = dyn_cast<FConstantExpr>(s))                    \
+      return c->_op();                                                  \
+  return _e_op ::alloc(s);                                              \
+}
+
+FUCREATE(FAbsExpr, FAbs)
+FUCREATE(FSqrtExpr, FSqrt)
+FUCREATE(FNearbyIntExpr, FNearbyInt)
+FUCREATE(FpClassifyExpr, FpClassify)
+FUCREATE(FIsFiniteExpr, FIsFinite)
+FUCREATE(FIsNanExpr, FIsNan)
+FUCREATE(FIsInfExpr, FIsInf)
+FUCREATE(FNegExpr, FNeg)
+
+/***/
+
+#define FBCREATE_R(_e_op, _op, partialL, partialR) \
+ref<Expr>  _e_op ::create(const ref<Expr> &l, const ref<Expr> &r) {     \
+  assert(l->getWidth()==r->getWidth() && "type mismatch");              \
+  if (FConstantExpr *cl = dyn_cast<FConstantExpr>(l)) {                 \
+    if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r))                 \
+      return cl->_op(cr);                                               \
+    return _e_op ## _createPartialR(cl, r.get());                       \
+  } else if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r)) {          \
+    return _e_op ## _createPartial(l.get(), cr);                        \
+  }                                                                     \
+  return _e_op ## _create(l.get(), r.get());                            \
+}
+
+#define FBCREATE(_e_op, _op) \
+ref<Expr>  _e_op ::create(const ref<Expr> &l, const ref<Expr> &r) {     \
+  assert(l->getWidth()==r->getWidth() && "type mismatch");              \
+  if (FConstantExpr *cl = dyn_cast<FConstantExpr>(l))                   \
+    if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r))                 \
+      return cl->_op(cr);                                               \
+  return _e_op ## _create(l, r);                                        \
+}
+
+static ref<Expr> FAddExpr_createPartialR(const ref<FConstantExpr> &cl, Expr *r) {
+    if (cl->isZero()) {
+        return r;
+    } else {
+        Expr::Kind rk = r->getKind();
+        if (rk==Expr::FAdd && isa<FConstantExpr>(r->getKid(0))) { // A + (B+c) == (A+B) + c
+            return FAddExpr::create(FAddExpr::create(cl, r->getKid(0)),
+                                   r->getKid(1));
+        } else if (rk==Expr::FSub && isa<FConstantExpr>(r->getKid(0))) { // A + (B-c) == (A+B) - c
+            return FSubExpr::create(FAddExpr::create(cl, r->getKid(0)),
+                                   r->getKid(1));
+        } else {
+            return FAddExpr::alloc(cl, r);
+        }
+    }
+}
+static ref<Expr> FAddExpr_createPartial(Expr *l, const ref<FConstantExpr> &cr) {
+    return FAddExpr_createPartialR(cr, l);
+}
+static ref<Expr> FAddExpr_create(Expr *l, Expr *r) {
+    Expr::Kind lk = l->getKind(), rk = r->getKind();
+    if (lk==Expr::FAdd && isa<FConstantExpr>(l->getKid(0))) { // (k+a)+b = k+(a+b)
+        return FAddExpr::create(l->getKid(0),
+                               FAddExpr::create(l->getKid(1), r));
+    } else if (lk==Expr::FSub && isa<FConstantExpr>(l->getKid(0))) { // (k-a)+b = k+(b-a)
+        return FAddExpr::create(l->getKid(0),
+                               FSubExpr::create(r, l->getKid(1)));
+    } else if (rk==Expr::FAdd && isa<FConstantExpr>(r->getKid(0))) { // a + (k+b) = k+(a+b)
+        return FAddExpr::create(r->getKid(0),
+                               FAddExpr::create(l, r->getKid(1)));
+    } else if (rk==Expr::FSub && isa<FConstantExpr>(r->getKid(0))) { // a + (k-b) = k+(a-b)
+        return FAddExpr::create(r->getKid(0),
+                               FSubExpr::create(l, r->getKid(1)));
+    } else {
+        return FAddExpr::alloc(l, r);
+    }
+}
+
+static ref<Expr> FSubExpr_createPartialR(const ref<FConstantExpr> &cl, Expr *r) {
+    Expr::Width type = cl->getWidth();
+
+    Expr::Kind rk = r->getKind();
+    if (rk==Expr::FAdd && isa<FConstantExpr>(r->getKid(0))) { // A - (B+c) == (A-B) - c
+        return FSubExpr::create(FSubExpr::create(cl, r->getKid(0)),
+                               r->getKid(1));
+    } else if (rk==Expr::FSub && isa<FConstantExpr>(r->getKid(0))) { // A - (B-c) == (A-B) + c
+        return FAddExpr::create(FSubExpr::create(cl, r->getKid(0)),
+                               r->getKid(1));
+    } else {
+        return FSubExpr::alloc(cl, r);
+    }
+}
+static ref<Expr> FSubExpr_createPartial(Expr *l, const ref<FConstantExpr> &cr) {
+    // l - c => l + (-c)
+    return FAddExpr_createPartial(l,
+                                 FConstantExpr::alloc(0, cr->getWidth())->FSub(cr));
+}
+static ref<Expr> FSubExpr_create(Expr *l, Expr *r) {
+    Expr::Width type = l->getWidth();
+
+    if (*l==*r) {
+        return FConstantExpr::alloc(0, type);
+    } else {
+        Expr::Kind lk = l->getKind(), rk = r->getKind();
+        if (lk==Expr::FAdd && isa<FConstantExpr>(l->getKid(0))) { // (k+a)-b = k+(a-b)
+            return FAddExpr::create(l->getKid(0),
+                                   FSubExpr::create(l->getKid(1), r));
+        } else if (lk==Expr::FSub && isa<FConstantExpr>(l->getKid(0))) { // (k-a)-b = k-(a+b)
+            return FSubExpr::create(l->getKid(0),
+                                   FAddExpr::create(l->getKid(1), r));
+        } else if (rk==Expr::FAdd && isa<FConstantExpr>(r->getKid(0))) { // a - (k+b) = (a-c) - k
+            return FSubExpr::create(FSubExpr::create(l, r->getKid(1)),
+                                   r->getKid(0));
+        } else if (rk==Expr::FSub && isa<FConstantExpr>(r->getKid(0))) { // a - (k-b) = (a+b) - k
+            return FSubExpr::create(FAddExpr::create(l, r->getKid(1)),
+                                   r->getKid(0));
+        } else {
+            return FSubExpr::alloc(l, r);
+        }
+    }
+}
+
+static ref<Expr> FMulExpr_createPartialR(const ref<FConstantExpr> &cl, Expr *r) {
+    if (cl->isOne()) {
+        return r;
+    } else if (cl->isZero()) {
+        return cl;
+    } else {
+        return FMulExpr::alloc(cl, r);
+    }
+}
+static ref<Expr> FMulExpr_createPartial(Expr *l, const ref<FConstantExpr> &cr) {
+    return FMulExpr_createPartialR(cr, l);
+}
+static ref<Expr> FMulExpr_create(Expr *l, Expr *r) {
+    return FMulExpr::alloc(l, r);
+}
+
+static ref<Expr> FDivExpr_create(const ref<Expr> &l, const ref<Expr> &r) {
+    return FDivExpr::alloc(l, r);
+}
+
+static ref<Expr> FRemExpr_create(const ref<Expr> &l, const ref<Expr> &r) {
+    return FRemExpr::alloc(l, r);
+}
+
+static ref<Expr> FMinExpr_create(const ref<Expr> &l, const ref<Expr> &r) {
+    return FMinExpr::alloc(l, r);
+}
+
+static ref<Expr> FMaxExpr_create(const ref<Expr> &l, const ref<Expr> &r) {
+    return FMaxExpr::alloc(l, r);
+}
+
+FBCREATE_R(FAddExpr, FAdd, FAddExpr_createPartial, FAddExpr_createPartialR)
+FBCREATE_R(FSubExpr, FSub, FSubExpr_createPartial, FSubExpr_createPartialR)
+FBCREATE_R(FMulExpr, FMul, FMulExpr_createPartial, FMulExpr_createPartialR)
+FBCREATE(FDivExpr, FDiv)
+FBCREATE(FRemExpr, FRem)
+FBCREATE(FMinExpr, FMin)
+FBCREATE(FMaxExpr, FMax)
+
+/***/
+
+#define FCMPCREATE(_e_op, _op) \
+ref<Expr>  _e_op ::create(const ref<Expr> &l, const ref<Expr> &r) {     \
+  assert(l->getWidth()==r->getWidth() && "type mismatch");              \
+  if (FConstantExpr *cl = dyn_cast<FConstantExpr>(l))                   \
+    if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r))                 \
+      return cl->_op(cr);                                               \
+  return _e_op ## _create(l, r);                                        \
+}
+
+// TODO: See if we can optimise equals with fixed point :)
+#define FCMPCREATE_T(_e_op, _op, _reflexive_e_op, partialL, partialR)  \
+ref<Expr>  _e_op ::create(const ref<Expr> &l, const ref<Expr> &r) {    \
+  assert(l->getWidth()==r->getWidth() && "type mismatch");             \
+  if (FConstantExpr *cl = dyn_cast<FConstantExpr>(l)) {                \
+    if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r))                \
+      return cl->_op(cr);                                              \
+    return partialR(cl, r.get());                                      \
+  } else if (FConstantExpr *cr = dyn_cast<FConstantExpr>(r)) {         \
+    return partialL(l.get(), cr);                                      \
+  } else {                                                             \
+    return _e_op ## _create(l.get(), r.get());                         \
+  }                                                                    \
+}
+
+static ref<Expr> FOrdExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOrdExpr::alloc(l,r); }
+static ref<Expr> FUnoExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUnoExpr::alloc(l,r); }
+static ref<Expr> FUeqExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUeqExpr::alloc(l,r); }
+static ref<Expr> FOeqExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOeqExpr::alloc(l,r); }
+static ref<Expr> FUgtExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUgtExpr::alloc(l,r); }
+static ref<Expr> FOgtExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOgtExpr::alloc(l,r); }
+static ref<Expr> FUgeExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUgeExpr::alloc(l,r); }
+static ref<Expr> FOgeExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOgeExpr::alloc(l,r); }
+static ref<Expr> FUltExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUltExpr::alloc(l,r); }
+static ref<Expr> FOltExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOltExpr::alloc(l,r); }
+static ref<Expr> FUleExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUleExpr::alloc(l,r); }
+static ref<Expr> FOleExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOleExpr::alloc(l,r); }
+static ref<Expr> FUneExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FUneExpr::alloc(l,r); }
+static ref<Expr> FOneExpr_create(const ref<Expr> &l, const ref<Expr> &r) { return FOneExpr::alloc(l,r); }
+
+FCMPCREATE(FOrdExpr, FOrd)
+FCMPCREATE(FUnoExpr, FUno)
+FCMPCREATE(FUeqExpr, FUeq)
+FCMPCREATE(FOeqExpr, FOeq)
+FCMPCREATE(FUgtExpr, FUgt)
+FCMPCREATE(FOgtExpr, FOgt)
+FCMPCREATE(FUgeExpr, FUge)
+FCMPCREATE(FOgeExpr, FOge)
+FCMPCREATE(FUltExpr, FUlt)
+FCMPCREATE(FOltExpr, FOlt)
+FCMPCREATE(FUleExpr, FUle)
+FCMPCREATE(FOleExpr, FOle)
+FCMPCREATE(FUneExpr, FUne)
+FCMPCREATE(FOneExpr, FOne)

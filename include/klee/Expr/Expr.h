@@ -102,8 +102,9 @@ public:
   static const Width Int16 = 16;
   static const Width Int32 = 32;
   static const Width Int64 = 64;
+  static const Width Fl32 = 32;
+  static const Width Fl64 = 64;
   static const Width Fl80 = 80;
-  
 
   enum Kind {
     InvalidKind = -1,
@@ -130,7 +131,6 @@ public:
     SExt,
     FToU,
     FToS,
-    ExplicitInt,
 
     // Bit
     Not,
@@ -176,12 +176,15 @@ public:
     FExt,
     UToF,
     SToF,
-    ExplicitFloat,
 
     // Special functions
     FAbs,
     FSqrt,
     FNearbyInt,
+    FpClassify,
+    FIsFinite,
+    FIsNan,
+    FIsInf,
 
     // Arithmetic
     FNeg,
@@ -214,7 +217,7 @@ public:
     LastKind=FOne,
 
     CastKindFirst=ZExt,
-    CastKindLast=ExplicitInt,
+    CastKindLast=FToS,
     BinaryKindFirst=Add,
     BinaryKindLast=Sge,
     CmpKindFirst=Eq,
@@ -222,7 +225,7 @@ public:
 
     FKindFirst=FConstant,
     FCastKindFirst=FExt,
-    FCastKindLast=ExplicitFloat,
+    FCastKindLast=SToF,
     FUnaryKindFirst=FAbs,
     FUnaryKindLast=FNeg,
     FBinaryKindFirst=FAdd,
@@ -963,6 +966,8 @@ public:                                                          \
 
 CAST_EXPR_CLASS(SExt)
 CAST_EXPR_CLASS(ZExt)
+CAST_EXPR_CLASS(FToU)
+CAST_EXPR_CLASS(FToS)
 
 // Arithmetic/Bit Exprs
 
@@ -1215,7 +1220,6 @@ public:
   // Operations that take an int and return a float
   ref<FConstantExpr> UToF(Width W);
   ref<FConstantExpr> SToF(Width W);
-  ref<FConstantExpr> ExplicitFloat(Width W);
 };
 
 // Floating point
@@ -1225,9 +1229,9 @@ class FExpr : public Expr {
 public:
   static bool classof(const Expr *E) {
     Kind k = E->getKind();
-    return k < Expr::FKindFirst;
+    return k >= Expr::FKindFirst;
   }
-  static bool classof(const IExpr *) { return true; }
+  static bool classof(const FExpr *) { return true; }
 };
 
 class FNonConstantExpr : public FExpr {
@@ -1236,7 +1240,7 @@ public:
     Kind k = E->getKind();
     return k != Expr::FConstant && k != Expr::Constant;
   }
-  static bool classof(const NonConstantExpr *) { return true; }
+  static bool classof(const FNonConstantExpr *) { return true; }
 };
 
 class FBinaryExpr : public FNonConstantExpr {
@@ -1261,7 +1265,7 @@ public:
     Kind k = E->getKind();
     return Expr::FBinaryKindFirst <= k && k <= Expr::FBinaryKindLast;
   }
-  static bool classof(const BinaryExpr *) { return true; }
+  static bool classof(const FBinaryExpr *) { return true; }
 };
 
 class FUnaryExpr : public FNonConstantExpr {
@@ -1280,7 +1284,7 @@ public:
     Kind k = E->getKind();
     return Expr::FUnaryKindFirst <= k && k <= Expr::FUnaryKindLast;
   }
-  static bool classof(const BinaryExpr *) { return true; }
+  static bool classof(const FUnaryExpr *) { return true; }
 };
 
 
@@ -1296,7 +1300,7 @@ public:
     Kind k = E->getKind();
     return Expr::FCmpKindFirst <= k && k <= Expr::FCmpKindLast;
   }
-  static bool classof(const CmpExpr *) { return true; }
+  static bool classof(const FCmpExpr *) { return true; }
 };
 
 /// Class representing an if-then-else expression (floating point).
@@ -1348,9 +1352,9 @@ private:
 
 public:
   static bool classof(const Expr *E) {
-    return E->getKind() == Expr::Select;
+    return E->getKind() == Expr::FSelect;
   }
-  static bool classof(const SelectExpr *) { return true; }
+  static bool classof(const FSelectExpr *) { return true; }
 
 protected:
   virtual int compareContents(const Expr &b) const {
@@ -1376,7 +1380,7 @@ public:
   static bool needsResultType() { return true; }
 
   int compareContents(const Expr &b) const {
-    const CastExpr &eb = static_cast<const CastExpr&>(b);
+    const FCastExpr &eb = static_cast<const FCastExpr&>(b);
     if (width != eb.width) return width < eb.width ? -1 : 1;
     return 0;
   }
@@ -1387,7 +1391,7 @@ public:
     Expr::Kind k = E->getKind();
     return Expr::FCastKindFirst <= k && k <= Expr::FCastKindLast;
   }
-  static bool classof(const CastExpr *) { return true; }
+  static bool classof(const FCastExpr *) { return true; }
 };
 
 #define FCAST_EXPR_CLASS(_class_kind)                             \
@@ -1454,10 +1458,14 @@ FCAST_EXPR_CLASS(SToF)
     }                                                                          \
   };
 
-FUNARY_EXPR_CLASS(FAbs);
-FUNARY_EXPR_CLASS(FSqrt);
-FUNARY_EXPR_CLASS(FNearbyInt);
-FUNARY_EXPR_CLASS(FNeg);
+FUNARY_EXPR_CLASS(FAbs)
+FUNARY_EXPR_CLASS(FSqrt)
+FUNARY_EXPR_CLASS(FNearbyInt)
+FUNARY_EXPR_CLASS(FpClassify)
+FUNARY_EXPR_CLASS(FIsFinite)
+FUNARY_EXPR_CLASS(FIsNan)
+FUNARY_EXPR_CLASS(FIsInf)
+FUNARY_EXPR_CLASS(FNeg)
 
 // Arithmetic/Bit Exprs
 
@@ -1551,6 +1559,146 @@ FCOMPARISON_EXPR_CLASS(FOle);
 FCOMPARISON_EXPR_CLASS(FUne);
 FCOMPARISON_EXPR_CLASS(FOne);
 
+class FConstantExpr : public FExpr {
+public:
+    static const Kind kind = Constant;
+    static const unsigned numKids = 0;
+
+private:
+    llvm::APInt value;
+
+    FConstantExpr(const llvm::APInt &v) : value(v) {}
+
+public:
+    ~FConstantExpr() {}
+
+    Width getWidth() const { return value.getBitWidth(); }
+    Kind getKind() const { return Constant; }
+
+    unsigned getNumKids() const { return 0; }
+    ref<Expr> getKid(unsigned i) const { return 0; }
+
+    /// getAPValue - Return the arbitrary precision value directly.
+    ///
+    /// Clients should generally not use the APInt value directly and instead use
+    /// native ConstantExpr APIs.
+    const llvm::APInt &getAPValue() const { return value; }
+
+    /// getLimitedValue - If this value is smaller than the specified limit,
+    /// return it, otherwise return the limit value.
+    uint64_t getLimitedValue(uint64_t Limit = ~0ULL) const {
+        return value.getLimitedValue(Limit);
+    }
+
+    /// toString - Return the constant value as a string
+    /// \param Res specifies the string for the result to be placed in
+    /// \param radix specifies the base (e.g. 2,10,16). The default is base 10
+    void toString(std::string &Res, unsigned radix = 10) const;
+
+    int compareContents(const Expr &b) const {
+        const FConstantExpr &cb = static_cast<const FConstantExpr &>(b);
+        if (getWidth() != cb.getWidth())
+            return getWidth() < cb.getWidth() ? -1 : 1;
+        if (value == cb.value)
+            return 0;
+        return value.ult(cb.value) ? -1 : 1;
+    }
+
+    virtual ref<Expr> rebuild(ref<Expr> kids[]) const {
+        assert(0 && "rebuild() on ConstantExpr");
+        return const_cast<FConstantExpr *>(this);
+    }
+
+    virtual unsigned computeHash();
+
+    static ref<Expr> fromMemory(void *address, Width w);
+    void toMemory(void *address);
+
+    static ref<FConstantExpr> alloc(const llvm::APInt &v) {
+        ref<FConstantExpr> r(new FConstantExpr(v));
+        r->computeHash();
+        return r;
+    }
+
+    static ref<FConstantExpr> alloc(const llvm::APFloat &f) {
+        return alloc(f.bitcastToAPInt()); // TODO: Implement properly converting APFLoat into fixed point
+    }
+
+    static ref<FConstantExpr> alloc(uint64_t v, Width w) {
+        return alloc(llvm::APInt(w, v));
+    }
+
+    static ref<FConstantExpr> create(uint64_t v, Width w) {
+#ifndef NDEBUG
+        if (w <= 64)
+            assert(v == bits64::truncateToNBits(v, w) && "invalid constant");
+#endif
+        return alloc(v, w);
+    }
+
+    static bool classof(const Expr *E) { return E->getKind() == Expr::FConstant; }
+    static bool classof(const FConstantExpr *) { return true; }
+
+    /* Utility Functions */
+
+    /// isZero - Is this a constant zero.
+    bool isZero() const { return getAPValue().isMinValue(); }
+
+    /// isOne - Is this a constant one.
+    bool isOne() const { return getLimitedValue() == 1; }
+
+    /// isTrue - Is this the true expression.
+    bool isTrue() const {
+        return (getWidth() == Expr::Bool && value.getBoolValue() == true);
+    }
+
+    /// isFalse - Is this the false expression.
+    bool isFalse() const {
+        return (getWidth() == Expr::Bool && value.getBoolValue() == false);
+    }
+
+    /// isAllOnes - Is this constant all ones.
+    bool isAllOnes() const { return getAPValue().isAllOnesValue(); }
+
+    /* Constant Operations */
+
+    ref<FConstantExpr> FExt(Width W);
+    ref<FConstantExpr> FNeg();
+    ref<FConstantExpr> FAbs();
+    ref<FConstantExpr> FSqrt();
+    ref<FConstantExpr> FNearbyInt();
+
+    // Binary operations
+    ref<FConstantExpr> FAdd(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FSub(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FMul(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FDiv(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FRem(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FMin(const ref<FConstantExpr> &RHS);
+    ref<FConstantExpr> FMax(const ref<FConstantExpr> &RHS);
+
+    // Operations that take a float and return an int
+    ref<ConstantExpr> FToU(Width W);
+    ref<ConstantExpr> FToS(Width W);
+    ref<ConstantExpr> FpClassify();
+    ref<ConstantExpr> FIsFinite();
+    ref<ConstantExpr> FIsNan();
+    ref<ConstantExpr> FIsInf();
+    ref<ConstantExpr> FOrd(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUno(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUeq(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOeq(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUgt(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOgt(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUge(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOge(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUlt(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOlt(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUle(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOle(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FUne(const ref<FConstantExpr> &RHS);
+    ref<ConstantExpr> FOne(const ref<FConstantExpr> &RHS);
+};
 
 // Implementations
 
@@ -1573,139 +1721,6 @@ inline bool Expr::isFalse() const {
     return CE->isFalse();
   return false;
 }
-
-class FConstantExpr : public FExpr {
-public:
-  static const Kind kind = Constant;
-  static const unsigned numKids = 0;
-
-private:
-  llvm::APInt value;
-
-  FConstantExpr(const llvm::APInt &v) : value(v) {}
-
-public:
-  ~FConstantExpr() {}
-
-  Width getWidth() const { return value.getBitWidth(); }
-  Kind getKind() const { return Constant; }
-
-  unsigned getNumKids() const { return 0; }
-  ref<Expr> getKid(unsigned i) const { return 0; }
-
-  /// getAPValue - Return the arbitrary precision value directly.
-  ///
-  /// Clients should generally not use the APInt value directly and instead use
-  /// native ConstantExpr APIs.
-  const llvm::APInt &getAPValue() const { return value; }
-
-  /// toString - Return the constant value as a string
-  /// \param Res specifies the string for the result to be placed in
-  /// \param radix specifies the base (e.g. 2,10,16). The default is base 10
-  void toString(std::string &Res, unsigned radix = 10) const;
-
-  int compareContents(const Expr &b) const {
-    const FConstantExpr &cb = static_cast<const FConstantExpr &>(b);
-    if (getWidth() != cb.getWidth())
-      return getWidth() < cb.getWidth() ? -1 : 1;
-    if (value == cb.value)
-      return 0;
-    return value.ult(cb.value) ? -1 : 1;
-  }
-
-  virtual ref<Expr> rebuild(ref<Expr> kids[]) const {
-    assert(0 && "rebuild() on ConstantExpr");
-    return const_cast<FConstantExpr *>(this);
-  }
-
-  virtual unsigned computeHash();
-
-  static ref<Expr> fromMemory(void *address, Width w);
-  void toMemory(void *address);
-
-  static ref<FConstantExpr> alloc(const llvm::APInt &v) {
-    ref<FConstantExpr> r(new FConstantExpr(v));
-    r->computeHash();
-    return r;
-  }
-
-  static ref<FConstantExpr> alloc(const llvm::APFloat &f) {
-    return alloc(f.bitcastToAPInt()); // TODO: Implement properly converting APFLoat into fixed point
-  }
-
-  static ref<FConstantExpr> alloc(uint64_t v, Width w) {
-    return alloc(llvm::APInt(w, v));
-  }
-
-  static ref<FConstantExpr> create(uint64_t v, Width w) {
-#ifndef NDEBUG
-    if (w <= 64)
-      assert(v == bits64::truncateToNBits(v, w) && "invalid constant");
-#endif
-    return alloc(v, w);
-  }
-
-  static bool classof(const Expr *E) { return E->getKind() == Expr::Constant; }
-  static bool classof(const ConstantExpr *) { return true; }
-
-  /* Utility Functions */
-
-  /// isZero - Is this a constant zero.
-  bool isZero() const { return getAPValue().isMinValue(); }
-
-  /// isTrue - Is this the true expression.
-  bool isTrue() const {
-    return (getWidth() == Expr::Bool && value.getBoolValue() == true);
-  }
-
-  /// isFalse - Is this the false expression.
-  bool isFalse() const {
-    return (getWidth() == Expr::Bool && value.getBoolValue() == false);
-  }
-
-  /// isAllOnes - Is this constant all ones.
-  bool isAllOnes() const { return getAPValue().isAllOnesValue(); }
-
-  /* Constant Operations */
-
-  ref<FConstantExpr> FExt(Width W, llvm::APFloat::roundingMode RM);
-  ref<FConstantExpr> FNeg();
-  ref<FConstantExpr> FAbs();
-  ref<FConstantExpr> FSqrt();
-  ref<FConstantExpr> FNearbyInt();
-
-  // Binary operations
-  ref<FConstantExpr> FAdd(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FSub(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FMul(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FDiv(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FRem(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FMin(const ref<FConstantExpr> &RHS);
-  ref<FConstantExpr> FMax(const ref<FConstantExpr> &RHS);
-
-  // Operations that take a float and return an int
-  ref<ConstantExpr> FToU(Width W);
-  ref<ConstantExpr> FToS(Width W);
-  ref<ConstantExpr> FpClassify();
-  ref<ConstantExpr> FIsFinite();
-  ref<ConstantExpr> FIsNan();
-  ref<ConstantExpr> FIsInf();
-  ref<ConstantExpr> FOrd(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUno(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUeq(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOeq(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUgt(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOgt(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUge(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOge(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUlt(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOlt(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUle(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOle(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FUne(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> FOne(const ref<FConstantExpr> &RHS);
-  ref<ConstantExpr> ExplicitInt(Width W);
-};
 
 } // End klee namespace
 
