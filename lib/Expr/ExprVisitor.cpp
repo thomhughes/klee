@@ -88,7 +88,41 @@ ref<Expr> ExprVisitor::visitActual(const ref<Expr> &e) {
     case Expr::Sle: res = visitSle(static_cast<SleExpr&>(ep)); break;
     case Expr::Sgt: res = visitSgt(static_cast<SgtExpr&>(ep)); break;
     case Expr::Sge: res = visitSge(static_cast<SgeExpr&>(ep)); break;
+    case Expr::FSelect: res = visitFSelect(static_cast<FSelectExpr&>(ep)); break;
+    case Expr::FExt: res = visitFExt(static_cast<FExtExpr&>(ep)); break;
+    case Expr::UToF: res = visitUToF(static_cast<UToFExpr&>(ep)); break;
+    case Expr::SToF: res = visitSToF(static_cast<SToFExpr&>(ep)); break;
+    case Expr::FAbs: res = visitFAbs(static_cast<FAbsExpr&>(ep)); break;
+    case Expr::FSqrt: res = visitFSqrt(static_cast<FSqrtExpr&>(ep)); break;
+    case Expr::FNearbyInt: res = visitFNearbyInt(static_cast<FNearbyIntExpr&>(ep)); break;
+    case Expr::FpClassify: res = visitFpClassify(static_cast<FpClassifyExpr&>(ep)); break;
+    case Expr::FIsFinite: res = visitFIsFinite(static_cast<FIsFiniteExpr&>(ep)); break;
+    case Expr::FIsNan: res = visitFIsNan(static_cast<FIsNanExpr&>(ep)); break;
+    case Expr::FIsInf: res = visitFIsInf(static_cast<FIsInfExpr&>(ep)); break;
+    case Expr::FNeg: res = visitFNeg(static_cast<FNegExpr&>(ep)); break;
+    case Expr::FAdd: res = visitFAdd(static_cast<FAddExpr&>(ep)); break;
+    case Expr::FSub: res = visitFSub(static_cast<FSubExpr&>(ep)); break;
+    case Expr::FMul: res = visitFMul(static_cast<FMulExpr&>(ep)); break;
+    case Expr::FDiv: res = visitFDiv(static_cast<FDivExpr&>(ep)); break;
+    case Expr::FRem: res = visitFRem(static_cast<FRemExpr&>(ep)); break;
+    case Expr::FMin: res = visitFMin(static_cast<FMinExpr&>(ep)); break;
+    case Expr::FMax: res = visitFMax(static_cast<FMaxExpr&>(ep)); break;
+    case Expr::FOrd: res = visitFOrd(static_cast<FOrdExpr&>(ep)); break;
+    case Expr::FUno: res = visitFUno(static_cast<FUnoExpr&>(ep)); break;
+    case Expr::FUeq: res = visitFUeq(static_cast<FUeqExpr&>(ep)); break;
+    case Expr::FOeq: res = visitFOeq(static_cast<FOeqExpr&>(ep)); break;
+    case Expr::FUgt: res = visitFUgt(static_cast<FUgtExpr&>(ep)); break;
+    case Expr::FOgt: res = visitFOgt(static_cast<FOgtExpr&>(ep)); break;
+    case Expr::FUge: res = visitFUge(static_cast<FUgeExpr&>(ep)); break;
+    case Expr::FOge: res = visitFOge(static_cast<FOgeExpr&>(ep)); break;
+    case Expr::FUlt: res = visitFUlt(static_cast<FUltExpr&>(ep)); break;
+    case Expr::FOlt: res = visitFOlt(static_cast<FOltExpr&>(ep)); break;
+    case Expr::FUle: res = visitFUle(static_cast<FUleExpr&>(ep)); break;
+    case Expr::FOle: res = visitFOle(static_cast<FOleExpr&>(ep)); break;
+    case Expr::FUne: res = visitFUne(static_cast<FUneExpr&>(ep)); break;
+    case Expr::FOne: res = visitFOne(static_cast<FOneExpr&>(ep)); break;
     case Expr::Constant:
+    case Expr::FConstant:
     default:
       assert(0 && "invalid expression kind");
     }
@@ -258,3 +292,134 @@ ExprVisitor::Action ExprVisitor::visitSge(const SgeExpr&) {
   return Action::doChildren(); 
 }
 
+ExprVisitor::Action ExprVisitor::visitFSelect(const FSelectExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFExt(const FExtExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitUToF(const UToFExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitSToF(const SToFExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFAbs(const FAbsExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFSqrt(const FSqrtExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFNearbyInt(const FNearbyIntExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFpClassify(const FpClassifyExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFIsFinite(const FIsFiniteExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFIsNan(const FIsNanExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFIsInf(const FIsInfExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFNeg(const FNegExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFAdd(const FAddExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFSub(const FSubExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFMul(const FMulExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFDiv(const FDivExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFRem(const FRemExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFMin(const FMinExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFMax(const FMaxExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOrd(const FOrdExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUno(const FUnoExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUeq(const FUeqExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOeq(const FOeqExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUgt(const FUgtExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOgt(const FOgtExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUge(const FUgeExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOge(const FOgeExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUlt(const FUltExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOlt(const FOltExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUle(const FUleExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOle(const FOleExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFUne(const FUneExpr&) {
+    return Action::doChildren();
+}
+
+ExprVisitor::Action ExprVisitor::visitFOne(const FOneExpr&) {
+    return Action::doChildren();
+}
