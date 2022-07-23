@@ -1141,9 +1141,9 @@ public:
     return r;
   }
 
-  static ref<ConstantExpr> alloc(const llvm::APFloat &f) {
-    return alloc(f.bitcastToAPInt());
-  }
+  //static ref<ConstantExpr> alloc(const llvm::APFloat &f) {
+  //  return alloc(f.bitcastToAPInt());
+  //}
 
   static ref<ConstantExpr> alloc(uint64_t v, Width w) {
     return alloc(llvm::APInt(w, v));
@@ -1306,7 +1306,7 @@ public:
 /// Class representing an if-then-else expression (floating point).
 class FSelectExpr : public FNonConstantExpr {
 public:
-  static const Kind kind = Select;
+  static const Kind kind = FSelect;
   static const unsigned numKids = 3;
 
 public:
@@ -1561,7 +1561,7 @@ FCOMPARISON_EXPR_CLASS(FOne);
 
 class FConstantExpr : public FExpr {
 public:
-    static const Kind kind = Constant;
+    static const Kind kind = FConstant;
     static const unsigned numKids = 0;
 
 private:
@@ -1620,9 +1620,7 @@ public:
         return r;
     }
 
-    static ref<FConstantExpr> alloc(const llvm::APFloat &f) {
-        return alloc(f.bitcastToAPInt()); // TODO: Implement properly converting APFLoat into fixed point
-    }
+    static ref<FConstantExpr> alloc(const llvm::APFloat &f);
 
     static ref<FConstantExpr> alloc(uint64_t v, Width w) {
         return alloc(llvm::APInt(w, v));
