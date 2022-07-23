@@ -24,7 +24,7 @@ llvm::cl::opt<bool> UseVisitorHash(
 using namespace klee;
 
 ref<Expr> ExprVisitor::visit(const ref<Expr> &e) {
-  if (!UseVisitorHash || isa<ConstantExpr>(e)) {
+  if (!UseVisitorHash || isa<ConstantExpr>(e) || isa<FConstantExpr>(e)) {
     return visitActual(e);
   } else {
     visited_ty::iterator it = visited.find(e);
@@ -40,7 +40,7 @@ ref<Expr> ExprVisitor::visit(const ref<Expr> &e) {
 }
 
 ref<Expr> ExprVisitor::visitActual(const ref<Expr> &e) {
-  if (isa<ConstantExpr>(e)) {    
+  if (isa<ConstantExpr>(e) || isa<FConstantExpr>(e)) {
     return e;
   } else {
     Expr &ep = *e.get();
