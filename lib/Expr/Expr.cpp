@@ -22,6 +22,7 @@
 #endif
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/APSInt.h"
 
 #include <sstream>
 
@@ -40,6 +41,14 @@ cl::opt<bool> ConstArrayOpt(
     cl::desc(
         "Enable an optimization involving all-constant arrays (default=false)"),
     cl::cat(klee::ExprCat));
+}
+
+namespace {
+    cl::opt<int> fractional_places(
+            "fractional-places", cl::init(16),
+            cl::desc(
+                    "Bit length of fractional part (default=16)"),
+            cl::cat(klee::ExprCat));
 }
 
 /***/
@@ -598,9 +607,9 @@ ref<ConstantExpr> ConstantExpr::Sge(const ref<ConstantExpr> &RHS) {
 ref <FConstantExpr> ConstantExpr::UToF(Width W) {
     switch (W) {
         case Expr::Fl32:
-            return FConstantExpr::alloc(value.zext(Expr::Fl32).shl(23));
+            return FConstantExpr::alloc(value.zext(Expr::Fl32).shl(fractional_places));
         case Expr::Fl64:
-            return FConstantExpr::alloc(value.zext(Expr::Fl64).shl(52));
+            return FConstantExpr::alloc(value.zext(Expr::Fl64).shl(2 * fractional_places));
         default:
             assert(0 && "Invalid width");
             break;
@@ -610,9 +619,9 @@ ref <FConstantExpr> ConstantExpr::UToF(Width W) {
 ref <FConstantExpr> ConstantExpr::SToF(Width W) {
     switch (W) {
         case Expr::Fl32:
-            return FConstantExpr::alloc(value.sext(Expr::Fl32).shl(23));
+            return FConstantExpr::alloc(value.sext(Expr::Fl32).shl(fractional_places));
         case Expr::Fl64:
-            return FConstantExpr::alloc(value.sext(Expr::Fl64).shl(52));
+            return FConstantExpr::alloc(value.sext(Expr::Fl64).shl(2 * fractional_places));
         default:
             assert(0 && "Invalid width");
             break;
@@ -1385,10 +1394,25 @@ void FConstantExpr::toString(std::string &Res, unsigned radix) const {
 #endif
 }
 
+ref<FConstantExpr> FConstantExpr::alloc(const llvm::APFloat &f) {
+    // TODO: We can overflow here, we aren't checking for it either.
+    assert(f.bitcastToAPInt().getBitWidth() == Expr::Fl32 || f.bitcastToAPInt().getBitWidth() == Expr::Fl64);
+    llvm::APSInt result(f.bitcastToAPInt().getBitWidth(), true);
+    llvm::APFloat::roundingMode rm = f.isNegative() ? llvm::APFloat::rmTowardNegative : llvm::APFloat::rmTowardPositive;
+    llvm::APFloat scaled(f.bitcastToAPInt().getBitWidth() == Expr::Fl32 ? pow(2, fractional_places) : pow(2, 2 * fractional_places));
 
-// TODO: FExt, FSqrt, FNearbyInt
+    bool ignored;
+    scaled.convertToInteger(result, rm, &ignored);
+    return alloc(result);
+}
+
+
+// TODO: FNearbyInt
 ref<FConstantExpr> FConstantExpr::FExt(Width W) {
-    return FConstantExpr::alloc(value);
+    // TODO: Make better logic, right now we are assuming > width -> fl32 to fl64 vice versa...
+    assert(W == Expr::Fl32 || W == Expr::Fl64);
+    llvm::APInt result = (W < getWidth()) ? value.ashr(fractional_places) : value.shl(fractional_places);
+    return FConstantExpr::alloc(result.zextOrTrunc(W));
 }
 
 ref<FConstantExpr> FConstantExpr::FNeg() {
@@ -1404,9 +1428,9 @@ ref<FConstantExpr> FConstantExpr::FNearbyInt() {
     // TODO: Round properly, make logic prettier
     switch(getWidth()) {
         case Expr::Fl32:
-            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(23).zext(getWidth()));
+            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(fractional_places).zext(getWidth()));
         case Expr::Fl64:
-            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(52).zext(getWidth()));
+            return FConstantExpr::alloc(value & ~llvm::APInt::getAllOnesValue(2 * fractional_places).zext(getWidth()));
         default:
             assert(0 && "Invalid width for nearby int");
             break;
@@ -1423,10 +1447,10 @@ ref<FConstantExpr> FConstantExpr::FMul(const ref<FConstantExpr> &RHS) {
     return FConstantExpr::alloc(value - RHS->value);
 }
 ref<FConstantExpr> FConstantExpr::FDiv(const ref<FConstantExpr> &RHS) {
-    return FConstantExpr::alloc(value - RHS->value);
+    return FConstantExpr::alloc(value.sdiv(RHS->value));
 }
 ref<FConstantExpr> FConstantExpr::FRem(const ref<FConstantExpr> &RHS) {
-    return FConstantExpr::alloc(value - RHS->value);
+    return FConstantExpr::alloc(value.srem(RHS->value));
 }
 ref<FConstantExpr> FConstantExpr::FMin(const ref<FConstantExpr> &RHS) {
     llvm::APInt min = value.slt(RHS->value) ? value : RHS->value;
@@ -1440,9 +1464,9 @@ ref<FConstantExpr> FConstantExpr::FMax(const ref<FConstantExpr> &RHS) {
 ref<ConstantExpr> FConstantExpr::FToU(Width W) {
     switch(getWidth()) {
         case Expr::Fl32:
-            return ConstantExpr::alloc(value.lshr(23).getHiBits(Expr::Fl32 - 23).zextOrTrunc(W));
+            return ConstantExpr::alloc(value.lshr(fractional_places).getHiBits(Expr::Fl32 - fractional_places).zextOrTrunc(W));
         case Expr::Fl64:
-            return ConstantExpr::alloc(value.lshr(52).getHiBits(Expr::Fl64 - 52).zextOrTrunc(W));
+            return ConstantExpr::alloc(value.lshr(2 * fractional_places).getHiBits(Expr::Fl64 - 2 * fractional_places).zextOrTrunc(W));
         default:
             assert(0 && "Invalid width");
             break;
@@ -1451,9 +1475,9 @@ ref<ConstantExpr> FConstantExpr::FToU(Width W) {
 ref<ConstantExpr> FConstantExpr::FToS(Width W) {
     switch(getWidth()) {
         case Expr::Fl32:
-            return ConstantExpr::alloc(value.ashr(23).getHiBits(Expr::Fl32 - 23).sextOrTrunc(W));
+            return ConstantExpr::alloc(value.ashr(fractional_places).getHiBits(Expr::Fl32 - fractional_places).sextOrTrunc(W));
         case Expr::Fl64:
-            return ConstantExpr::alloc(value.ashr(52).getHiBits(Expr::Fl64 - 52).sextOrTrunc(W));
+            return ConstantExpr::alloc(value.ashr(2 * fractional_places).getHiBits(Expr::Fl64 - fractional_places).sextOrTrunc(W));
         default:
             assert(0 && "Invalid width");
             break;
@@ -1462,10 +1486,10 @@ ref<ConstantExpr> FConstantExpr::FToS(Width W) {
 
 // TODO: FPClassify, FIsFinite, FIsNan, FIsInf
 ref<ConstantExpr> FConstantExpr::FpClassify() {
-    return ConstantExpr::alloc(0, sizeof(int)*8);
+    return ConstantExpr::alloc(FP_NORMAL, sizeof(int)*8);
 }
 ref<ConstantExpr> FConstantExpr::FIsFinite() {
-    return ConstantExpr::alloc(0, sizeof(int)*8);
+    return ConstantExpr::alloc(1, sizeof(int)*8);
 }
 ref<ConstantExpr> FConstantExpr::FIsNan() {
     return ConstantExpr::alloc(0, sizeof(int)*8);
@@ -1533,6 +1557,14 @@ ref<Expr> FSelectExpr::create(ref<Expr> c, ref<Expr> t, ref<Expr> f) {
     }
 
     return FSelectExpr::alloc(c, t, f);
+}
+
+/***/
+
+ref<Expr> FExtExpr::create(const ref<Expr> &e, Width w) {
+    if (FConstantExpr *ce = dyn_cast<FConstantExpr>(e))
+        return ce->FExt(w);
+    return FExtExpr::alloc(e, w);
 }
 
 /***/
@@ -1616,8 +1648,6 @@ static ref<Expr> FAddExpr_create(Expr *l, Expr *r) {
 }
 
 static ref<Expr> FSubExpr_createPartialR(const ref<FConstantExpr> &cl, Expr *r) {
-    Expr::Width type = cl->getWidth();
-
     Expr::Kind rk = r->getKind();
     if (rk==Expr::FAdd && isa<FConstantExpr>(r->getKid(0))) { // A - (B+c) == (A-B) - c
         return FSubExpr::create(FSubExpr::create(cl, r->getKid(0)),
