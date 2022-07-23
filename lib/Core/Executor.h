@@ -376,13 +376,13 @@ private:
   /// Evaluates an LLVM constant expression.  The optional argument ki
   /// is the instruction where this constant was encountered, or NULL
   /// if not applicable/unavailable.
-  ref<klee::ConstantExpr> evalConstantExpr(const llvm::ConstantExpr *c,
+  ref<klee::Expr> evalConstantExpr(const llvm::ConstantExpr *c,
 					   const KInstruction *ki = NULL);
 
   /// Evaluates an LLVM constant.  The optional argument ki is the
   /// instruction where this constant was encountered, or NULL if
   /// not applicable/unavailable.
-  ref<klee::ConstantExpr> evalConstant(const llvm::Constant *c,
+  ref<klee::Expr> evalConstant(const llvm::Constant *c,
 				       const KInstruction *ki = NULL);
 
   /// Return a unique constant value for the given expression in the
@@ -396,7 +396,7 @@ private:
   /// should generally be avoided.
   ///
   /// \param purpose An identify string to printed in case of concretization.
-  ref<klee::ConstantExpr> toConstant(ExecutionState &state, ref<Expr> e, 
+  ref<klee::Expr> toConstant(ExecutionState &state, ref<Expr> e,
                                      const char *purpose);
 
   /// Bind a constant value for e to the given target. NOTE: This
