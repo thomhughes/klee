@@ -24,7 +24,7 @@ llvm::cl::opt<bool> UseVisitorHash(
 using namespace klee;
 
 ref<Expr> ExprVisitor::visit(const ref<Expr> &e) {
-  if (!UseVisitorHash || isa<ConstantExpr>(e) || isa<FConstantExpr>(e)) {
+  if (!UseVisitorHash || isa<ConstantExpr>(e)) {
     return visitActual(e);
   } else {
     visited_ty::iterator it = visited.find(e);
@@ -40,7 +40,7 @@ ref<Expr> ExprVisitor::visit(const ref<Expr> &e) {
 }
 
 ref<Expr> ExprVisitor::visitActual(const ref<Expr> &e) {
-  if (isa<ConstantExpr>(e) || isa<FConstantExpr>(e)) {
+  if (isa<ConstantExpr>(e)) {
     return e;
   } else {
     Expr &ep = *e.get();
@@ -88,7 +88,6 @@ ref<Expr> ExprVisitor::visitActual(const ref<Expr> &e) {
     case Expr::Sle: res = visitSle(static_cast<SleExpr&>(ep)); break;
     case Expr::Sgt: res = visitSgt(static_cast<SgtExpr&>(ep)); break;
     case Expr::Sge: res = visitSge(static_cast<SgeExpr&>(ep)); break;
-    case Expr::FSelect: res = visitFSelect(static_cast<FSelectExpr&>(ep)); break;
     case Expr::FExt: res = visitFExt(static_cast<FExtExpr&>(ep)); break;
     case Expr::UToF: res = visitUToF(static_cast<UToFExpr&>(ep)); break;
     case Expr::SToF: res = visitSToF(static_cast<SToFExpr&>(ep)); break;
@@ -122,7 +121,6 @@ ref<Expr> ExprVisitor::visitActual(const ref<Expr> &e) {
     case Expr::FUne: res = visitFUne(static_cast<FUneExpr&>(ep)); break;
     case Expr::FOne: res = visitFOne(static_cast<FOneExpr&>(ep)); break;
     case Expr::Constant:
-    case Expr::FConstant:
     default:
       assert(0 && "invalid expression kind");
     }
@@ -290,10 +288,6 @@ ExprVisitor::Action ExprVisitor::visitSgt(const SgtExpr&) {
 
 ExprVisitor::Action ExprVisitor::visitSge(const SgeExpr&) {
   return Action::doChildren(); 
-}
-
-ExprVisitor::Action ExprVisitor::visitFSelect(const FSelectExpr&) {
-    return Action::doChildren();
 }
 
 ExprVisitor::Action ExprVisitor::visitFExt(const FExtExpr&) {

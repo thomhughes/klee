@@ -32,7 +32,7 @@ using namespace llvm;
 
 namespace klee {
 
-  ref<klee::Expr> Executor::evalConstant(const Constant *c,
+  ref<klee::ConstantExpr> Executor::evalConstant(const Constant *c,
                                                  const KInstruction *ki) {
     if (!ki) {
       KConstant* kc = kmodule->getKConstant(c);
@@ -44,9 +44,12 @@ namespace klee {
       return evalConstantExpr(ce, ki);
     } else {
       if (const ConstantInt *ci = dyn_cast<ConstantInt>(c)) {
+        klee_message("Integer constant: %li", ci->getSExtValue());
         return ConstantExpr::alloc(ci->getValue());
       } else if (const ConstantFP *cf = dyn_cast<ConstantFP>(c)) {
-        return FConstantExpr::alloc(cf->getValue());
+        klee_message("Float constant: %f", cf->getValueAPF().convertToFloat());
+        return ConstantExpr::alloc(55, Expr::Fl32);
+        //return FConstantExpr::alloc(cf->getValueAPF().bitcastToAPInt());
       } else if (const GlobalValue *gv = dyn_cast<GlobalValue>(c)) {
         auto it = globalAddresses.find(gv);
         assert(it != globalAddresses.end());
@@ -135,11 +138,11 @@ namespace klee {
     }
   }
 
-  ref<Expr> Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
+  ref<ConstantExpr> Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
                                                const KInstruction *ki) {
     llvm::Type *type = ce->getType();
 
-    ref<Expr> op1(0), op2(0), op3(0);
+    ref<ConstantExpr> op1(0), op2(0), op3(0);
     int numOperands = ce->getNumOperands();
 
     if (numOperands > 0) op1 = evalConstant(ce->getOperand(0), ki);
@@ -152,26 +155,19 @@ namespace klee {
     case Instruction::UDiv:
     case Instruction::SRem:
     case Instruction::URem:
-      if (cast<ConstantExpr>(op2)->getLimitedValue() == 0) {
+    case Instruction::FDiv:
+    case Instruction::FRem:
+      if (op2->getLimitedValue() == 0) {
         std::string msg("Division/modulo by zero during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->getSourceLocation() : "[unknown]");
         klee_error("%s", os.str().c_str());
       }
       break;
-    case Instruction::FDiv:
-    case Instruction::FRem:
-        if (cast<FConstantExpr>(op2)->getLimitedValue() == 0) {
-            std::string msg("Division/modulo by zero during constant folding at location ");
-            llvm::raw_string_ostream os(msg);
-            os << (ki ? ki->getSourceLocation() : "[unknown]");
-            klee_error("%s", os.str().c_str());
-        }
-        break;
     case Instruction::Shl:
     case Instruction::LShr:
     case Instruction::AShr:
-      if (cast<ConstantExpr>(op2)->getLimitedValue() >= cast<ConstantExpr>(op1)->getWidth()) {
+      if (op2->getLimitedValue() >= op1->getWidth()) {
         std::string msg("Overshift during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->getSourceLocation() : "[unknown]");
@@ -189,32 +185,32 @@ namespace klee {
       klee_error("%s", os.str().c_str());
 
     case Instruction::Trunc:
-      return cast<ConstantExpr>(op1)->Extract(0, getWidthForLLVMType(type));
-    case Instruction::ZExt:  return cast<ConstantExpr>(op1)->ZExt(getWidthForLLVMType(type));
-    case Instruction::SExt:  return cast<ConstantExpr>(op1)->SExt(getWidthForLLVMType(type));
-    case Instruction::Add:   return cast<ConstantExpr>(op1)->Add(cast<ConstantExpr>(op2));
-    case Instruction::Sub:   return cast<ConstantExpr>(op1)->Sub(cast<ConstantExpr>(op2));
-    case Instruction::Mul:   return cast<ConstantExpr>(op1)->Mul(cast<ConstantExpr>(op2));
-    case Instruction::SDiv:  return cast<ConstantExpr>(op1)->SDiv(cast<ConstantExpr>(op2));
-    case Instruction::UDiv:  return cast<ConstantExpr>(op1)->UDiv(cast<ConstantExpr>(op2));
-    case Instruction::SRem:  return cast<ConstantExpr>(op1)->SRem(cast<ConstantExpr>(op2));
-    case Instruction::URem:  return cast<ConstantExpr>(op1)->URem(cast<ConstantExpr>(op2));
-    case Instruction::And:   return cast<ConstantExpr>(op1)->And(cast<ConstantExpr>(op2));
-    case Instruction::Or:    return cast<ConstantExpr>(op1)->Or(cast<ConstantExpr>(op2));
-    case Instruction::Xor:   return cast<ConstantExpr>(op1)->Xor(cast<ConstantExpr>(op2));
-    case Instruction::Shl:   return cast<ConstantExpr>(op1)->Shl(cast<ConstantExpr>(op2));
-    case Instruction::LShr:  return cast<ConstantExpr>(op1)->LShr(cast<ConstantExpr>(op2));
-    case Instruction::AShr:  return cast<ConstantExpr>(op1)->AShr(cast<ConstantExpr>(op2));
+      return op1->Extract(0, getWidthForLLVMType(type));
+    case Instruction::ZExt:  return op1->ZExt(getWidthForLLVMType(type));
+    case Instruction::SExt:  return op1->SExt(getWidthForLLVMType(type));
+    case Instruction::Add:   return op1->Add(cast<ConstantExpr>(op2));
+    case Instruction::Sub:   return op1->Sub(cast<ConstantExpr>(op2));
+    case Instruction::Mul:   return op1->Mul(cast<ConstantExpr>(op2));
+    case Instruction::SDiv:  return op1->SDiv(cast<ConstantExpr>(op2));
+    case Instruction::UDiv:  return op1->UDiv(cast<ConstantExpr>(op2));
+    case Instruction::SRem:  return op1->SRem(cast<ConstantExpr>(op2));
+    case Instruction::URem:  return op1->URem(cast<ConstantExpr>(op2));
+    case Instruction::And:   return op1->And(cast<ConstantExpr>(op2));
+    case Instruction::Or:    return op1->Or(cast<ConstantExpr>(op2));
+    case Instruction::Xor:   return op1->Xor(cast<ConstantExpr>(op2));
+    case Instruction::Shl:   return op1->Shl(cast<ConstantExpr>(op2));
+    case Instruction::LShr:  return op1->LShr(cast<ConstantExpr>(op2));
+    case Instruction::AShr:  return op1->AShr(cast<ConstantExpr>(op2));
     case Instruction::BitCast:  return op1;
 
     case Instruction::IntToPtr:
-      return cast<ConstantExpr>(op1)->ZExt(getWidthForLLVMType(type));
+      return op1->ZExt(getWidthForLLVMType(type));
 
     case Instruction::PtrToInt:
-      return cast<ConstantExpr>(op1)->ZExt(getWidthForLLVMType(type));
+      return op1->ZExt(getWidthForLLVMType(type));
 
     case Instruction::GetElementPtr: {
-      ref<ConstantExpr> base = cast<ConstantExpr>(op1)->ZExt(Context::get().getPointerWidth());
+      ref<ConstantExpr> base = op1->ZExt(Context::get().getPointerWidth());
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
         ref<ConstantExpr> indexOp =
@@ -246,52 +242,52 @@ namespace klee {
     case Instruction::ICmp: {
       switch(ce->getPredicate()) {
       default: assert(0 && "unhandled ICmp predicate");
-      case ICmpInst::ICMP_EQ:  return cast<ConstantExpr>(op1)->Eq(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_NE:  return cast<ConstantExpr>(op1)->Ne(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_UGT: return cast<ConstantExpr>(op1)->Ugt(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_UGE: return cast<ConstantExpr>(op1)->Uge(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_ULT: return cast<ConstantExpr>(op1)->Ult(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_ULE: return cast<ConstantExpr>(op1)->Ule(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_SGT: return cast<ConstantExpr>(op1)->Sgt(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_SGE: return cast<ConstantExpr>(op1)->Sge(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_SLT: return cast<ConstantExpr>(op1)->Slt(cast<ConstantExpr>(op2));
-      case ICmpInst::ICMP_SLE: return cast<ConstantExpr>(op1)->Sle(cast<ConstantExpr>(op2));
+      case ICmpInst::ICMP_EQ:  return op1->Eq(op2);
+      case ICmpInst::ICMP_NE:  return op1->Ne(op2);
+      case ICmpInst::ICMP_UGT: return op1->Ugt(op2);
+      case ICmpInst::ICMP_UGE: return op1->Uge(op2);
+      case ICmpInst::ICMP_ULT: return op1->Ult(op2);
+      case ICmpInst::ICMP_ULE: return op1->Ule(op2);
+      case ICmpInst::ICMP_SGT: return op1->Sgt(op2);
+      case ICmpInst::ICMP_SGE: return op1->Sge(op2);
+      case ICmpInst::ICMP_SLT: return op1->Slt(op2);
+      case ICmpInst::ICMP_SLE: return op1->Sle(op2);
       }
     }
 
     case Instruction::Select:
       return op1->isTrue() ? op2 : op3;
 
-    case Instruction::FAdd: return cast<FConstantExpr>(op1)->FAdd(cast<FConstantExpr>(op2));
-    case Instruction::FSub: return cast<FConstantExpr>(op1)->FSub(cast<FConstantExpr>(op2));
-    case Instruction::FMul: return cast<FConstantExpr>(op1)->FMul(cast<FConstantExpr>(op2));
-    case Instruction::FDiv: return cast<FConstantExpr>(op1)->FDiv(cast<FConstantExpr>(op2));
-    case Instruction::FRem: return cast<FConstantExpr>(op1)->FRem(cast<FConstantExpr>(op2));
+    case Instruction::FAdd: return op1->FAdd(op2);
+    case Instruction::FSub: return op1->FSub(op2);
+    case Instruction::FMul: return op1->FMul(op2);
+    case Instruction::FDiv: return op1->FDiv(op2);
+    case Instruction::FRem: return op1->FRem(op2);
     case Instruction::FPTrunc: // TODO: Check if this works?
-    case Instruction::FPExt: return cast<FConstantExpr>(op1)->FExt(getWidthForLLVMType(type));
-    case Instruction::UIToFP: return cast<ConstantExpr>(op1)->UToF(getWidthForLLVMType(type));
-    case Instruction::SIToFP: return cast<ConstantExpr>(op1)->SToF(getWidthForLLVMType(type));
-    case Instruction::FPToUI: return cast<FConstantExpr>(op1)->FToU(getWidthForLLVMType(type));
-    case Instruction::FPToSI: return cast<FConstantExpr>(op1)->FToS(getWidthForLLVMType(type));
+    case Instruction::FPExt: return op1->FExt(getWidthForLLVMType(type));
+    case Instruction::UIToFP: return op1->UToF(getWidthForLLVMType(type));
+    case Instruction::SIToFP: return op1->SToF(getWidthForLLVMType(type));
+    case Instruction::FPToUI: return op1->FToU(getWidthForLLVMType(type));
+    case Instruction::FPToSI: return op1->FToS(getWidthForLLVMType(type));
     case Instruction::FCmp: {
         switch(ce->getPredicate()) {
             default: assert(0 && "unhandled FCmp predicate");
-            case FCmpInst::FCMP_FALSE: return FConstantExpr::create(false, getWidthForLLVMType(type));
-	        case FCmpInst::FCMP_OEQ: return cast<FConstantExpr>(op1)->FOeq(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_OGT: return cast<FConstantExpr>(op1)->FOgt(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_OGE: return cast<FConstantExpr>(op1)->FOge(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_OLT: return cast<FConstantExpr>(op1)->FOlt(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_OLE: return cast<FConstantExpr>(op1)->FOle(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_ONE: return cast<FConstantExpr>(op1)->FOne(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_ORD: return cast<FConstantExpr>(op1)->FOrd(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_UNO: return cast<FConstantExpr>(op1)->FUno(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_UEQ: return cast<FConstantExpr>(op1)->FUeq(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_UGT: return cast<FConstantExpr>(op1)->FUgt(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_UGE: return cast<FConstantExpr>(op1)->FUge(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_ULT: return cast<FConstantExpr>(op1)->FUlt(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_ULE: return cast<FConstantExpr>(op1)->FUle(cast<FConstantExpr>(op2));
-            case FCmpInst::FCMP_UNE: return cast<FConstantExpr>(op1)->FUne(cast<FConstantExpr>(op2));
-	        case FCmpInst::FCMP_TRUE: return FConstantExpr::create(true, getWidthForLLVMType(type));
+            case FCmpInst::FCMP_FALSE: return ConstantExpr::create(false, getWidthForLLVMType(type));
+	        case FCmpInst::FCMP_OEQ: return op1->FOeq(op2);
+            case FCmpInst::FCMP_OGT: return op1->FOgt(op2);
+            case FCmpInst::FCMP_OGE: return op1->FOge(op2);
+            case FCmpInst::FCMP_OLT: return op1->FOlt(op2);
+            case FCmpInst::FCMP_OLE: return op1->FOle(op2);
+            case FCmpInst::FCMP_ONE: return op1->FOne(op2);
+            case FCmpInst::FCMP_ORD: return op1->FOrd(op2);
+            case FCmpInst::FCMP_UNO: return op1->FUno(op2);
+            case FCmpInst::FCMP_UEQ: return op1->FUeq(op2);
+            case FCmpInst::FCMP_UGT: return op1->FUgt(op2);
+            case FCmpInst::FCMP_UGE: return op1->FUge(op2);
+            case FCmpInst::FCMP_ULT: return op1->FUlt(op2);
+            case FCmpInst::FCMP_ULE: return op1->FUle(op2);
+            case FCmpInst::FCMP_UNE: return op1->FUne(op2);
+	        case FCmpInst::FCMP_TRUE: return ConstantExpr::create(true, getWidthForLLVMType(type));
         }
     }
     }

@@ -1280,7 +1280,7 @@ ref<Expr> Executor::toUnique(const ExecutionState &state,
 
 /* Concretize the given expression, and return a possible constant value. 
    'reason' is just a documentation string stating the reason for concretization. */
-ref<klee::ConstantExpr> 
+ref<klee::Expr>
 Executor::toConstant(ExecutionState &state, 
                      ref<Expr> e,
                      const char *reason) {
@@ -2509,13 +2509,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     // Special instructions
   case Instruction::Select: {
-    // NOTE: It is not required that operands 1 and 2 be of scalar type.
-    ref<Expr> cond = eval(ki, 0, state).value;
-    ref<Expr> tExpr = eval(ki, 1, state).value;
-    ref<Expr> fExpr = eval(ki, 2, state).value;
-    ref<Expr> result = SelectExpr::create(cond, tExpr, fExpr);
-    bindLocal(ki, state, result);
-    break;
+      ref<Expr> cond = eval(ki, 0, state).value;
+      ref<Expr> tExpr = eval(ki, 1, state).value;
+      ref<Expr> fExpr = eval(ki, 2, state).value;
+      ref<Expr> result = SelectExpr::create(cond, tExpr, fExpr);
+      bindLocal(ki, state, result);
+      break;
   }
 
   case Instruction::VAArg:
@@ -2824,6 +2823,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   }
 
   case Instruction::FAdd: {
+#if 0
     ref<ConstantExpr> left = toConstant(state, eval(ki, 0, state).value,
                                         "floating point");
     ref<ConstantExpr> right = toConstant(state, eval(ki, 1, state).value,
@@ -2835,6 +2835,10 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     llvm::APFloat Res(*fpWidthToSemantics(left->getWidth()), left->getAPValue());
     Res.add(APFloat(*fpWidthToSemantics(right->getWidth()),right->getAPValue()), APFloat::rmNearestTiesToEven);
     bindLocal(ki, state, ConstantExpr::alloc(Res.bitcastToAPInt()));
+#endif
+    ref<Expr> left = eval(ki, 0, state).value;
+    ref<Expr> right = eval(ki, 1, state).value;
+    bindLocal(ki, state, FAddExpr::create(left, right));
     break;
   }
 
@@ -2898,6 +2902,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   }
 
   case Instruction::FPTrunc: {
+#if 0
     FPTruncInst *fi = cast<FPTruncInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2911,10 +2916,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                 llvm::APFloat::rmNearestTiesToEven,
                 &losesInfo);
     bindLocal(ki, state, ConstantExpr::alloc(Res));
+#endif
+    // TODO: Do this
     break;
   }
 
   case Instruction::FPExt: {
+#if 0
     FPExtInst *fi = cast<FPExtInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2927,10 +2935,16 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                 llvm::APFloat::rmNearestTiesToEven,
                 &losesInfo);
     bindLocal(ki, state, ConstantExpr::alloc(Res));
+#endif
+    CastInst *ci = cast<CastInst>(i);
+    ref<Expr> result = FExtExpr::create(eval(ki, 0, state).value,
+                                      getWidthForLLVMType(ci->getType()));
+    bindLocal(ki, state, result);
     break;
   }
 
   case Instruction::FPToUI: {
+#if 0
     FPToUIInst *fi = cast<FPToUIInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2945,10 +2959,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     Arg.convertToInteger(valueRef, resultType, false,
                          llvm::APFloat::rmTowardZero, &isExact);
     bindLocal(ki, state, ConstantExpr::alloc(value, resultType));
+#endif
     break;
   }
 
   case Instruction::FPToSI: {
+#if 0
     FPToSIInst *fi = cast<FPToSIInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2963,10 +2979,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     Arg.convertToInteger(valueRef, resultType, true,
                          llvm::APFloat::rmTowardZero, &isExact);
     bindLocal(ki, state, ConstantExpr::alloc(value, resultType));
+#endif
     break;
   }
 
   case Instruction::UIToFP: {
+#if 0
     UIToFPInst *fi = cast<UIToFPInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2979,10 +2997,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                        llvm::APFloat::rmNearestTiesToEven);
 
     bindLocal(ki, state, ConstantExpr::alloc(f));
+#endif
     break;
   }
 
   case Instruction::SIToFP: {
+#if 0
     SIToFPInst *fi = cast<SIToFPInst>(i);
     Expr::Width resultType = getWidthForLLVMType(fi->getType());
     ref<ConstantExpr> arg = toConstant(state, eval(ki, 0, state).value,
@@ -2995,10 +3015,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                        llvm::APFloat::rmNearestTiesToEven);
 
     bindLocal(ki, state, ConstantExpr::alloc(f));
+#endif
     break;
   }
 
   case Instruction::FCmp: {
+#if 0
     FCmpInst *fi = cast<FCmpInst>(i);
     ref<ConstantExpr> left = toConstant(state, eval(ki, 0, state).value,
                                         "floating point");
@@ -3079,6 +3101,125 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     bindLocal(ki, state, ConstantExpr::alloc(Result, Expr::Bool));
+#endif
+    FCmpInst *fi = cast<FCmpInst>(i);
+
+    switch(fi->getPredicate()) {
+    case FCmpInst::FCMP_ORD: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOrdExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_UNO: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUnoExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_UEQ: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUeqExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_OEQ: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOeqExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_UGT: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUgtExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_OGT: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOgtExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_UGE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUgeExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_OGE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOgeExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_ULT: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUltExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_OLT: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOltExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_ULE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUleExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_OLE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOeqExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_UNE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FUneExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+    case FCmpInst::FCMP_ONE: {
+        ref<Expr> left = eval(ki, 0, state).value;
+        ref<Expr> right = eval(ki, 1, state).value;
+        ref<Expr> result = FOneExpr::create(left, right);
+        bindLocal(ki, state, result);
+        break;
+    }
+
+    case FCmpInst::FCMP_FALSE:
+        bindLocal(ki, state, ConstantExpr::alloc(0, Expr::Bool));
+        break;
+    case FCmpInst::FCMP_TRUE:
+        bindLocal(ki, state, ConstantExpr::alloc(1, Expr::Bool));
+        break;
+    default:
+        assert(0 && "Invalid FCMP predicate!");
+        break;
+    }
     break;
   }
   case Instruction::InsertValue: {
@@ -3334,7 +3475,7 @@ void Executor::computeOffsetsSeqTy(KGEPInstruction *kgepi,
   const Value *operand = it.getOperand();
   if (const Constant *c = dyn_cast<Constant>(operand)) {
     ref<ConstantExpr> index =
-        evalConstant(c)->SExt(Context::get().getPointerWidth());
+        cast<ConstantExpr>(evalConstant(c))->SExt(Context::get().getPointerWidth());
     ref<ConstantExpr> addend = index->Mul(
         ConstantExpr::alloc(elementSize, Context::get().getPointerWidth()));
     constantOffset = constantOffset->Add(addend);

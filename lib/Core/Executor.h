@@ -376,13 +376,13 @@ private:
   /// Evaluates an LLVM constant expression.  The optional argument ki
   /// is the instruction where this constant was encountered, or NULL
   /// if not applicable/unavailable.
-  ref<klee::Expr> evalConstantExpr(const llvm::ConstantExpr *c,
+  ref<klee::ConstantExpr> evalConstantExpr(const llvm::ConstantExpr *c,
 					   const KInstruction *ki = NULL);
 
   /// Evaluates an LLVM constant.  The optional argument ki is the
   /// instruction where this constant was encountered, or NULL if
   /// not applicable/unavailable.
-  ref<klee::Expr> evalConstant(const llvm::Constant *c,
+  ref<klee::ConstantExpr> evalConstant(const llvm::Constant *c,
 				       const KInstruction *ki = NULL);
 
   /// Return a unique constant value for the given expression in the
