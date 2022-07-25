@@ -1338,12 +1338,16 @@ CMPCREATE(SleExpr, Sle)
 ref<ConstantExpr> ConstantExpr::alloc(const llvm::APFloat &f) {
     // TODO: We can overflow here, we aren't checking for it either.
     assert(f.bitcastToAPInt().getBitWidth() == Expr::Fl32 || f.bitcastToAPInt().getBitWidth() == Expr::Fl64);
-    llvm::APSInt result(f.bitcastToAPInt().getBitWidth(), true);
+
+    llvm::APSInt result(f.bitcastToAPInt().getBitWidth(), false);
     llvm::APFloat::roundingMode rm = f.isNegative() ? llvm::APFloat::rmTowardNegative : llvm::APFloat::rmTowardPositive;
-    llvm::APFloat scaled(f.bitcastToAPInt().getBitWidth() == Expr::Fl32 ? pow(2, fractional_places) : pow(2, 2 * fractional_places));
+
+    llvm::APFloat scaled(f.bitcastToAPInt().getBitWidth() == Expr::Fl32 ?
+        pow(2, fractional_places): pow(2, 2 * fractional_places));
 
     bool ignored;
-    scaled.convertToInteger(result, rm, &ignored);
+    scaled.convert(f.getSemantics(), rm, &ignored);
+    (scaled * f).convertToInteger(result, rm, &ignored);
     return alloc(result);
 }
 
@@ -1378,6 +1382,7 @@ ref<ConstantExpr> ConstantExpr::FNearbyInt() {
     }
 }
 
+// Note: Rounding is assumed to be "to nearest"
 ref<ConstantExpr> ConstantExpr::FAdd(const ref<ConstantExpr> &RHS) {
     return ConstantExpr::alloc(value + RHS->value);
 }
@@ -1385,10 +1390,16 @@ ref<ConstantExpr> ConstantExpr::FSub(const ref<ConstantExpr> &RHS) {
     return ConstantExpr::alloc(value - RHS->value);
 }
 ref<ConstantExpr> ConstantExpr::FMul(const ref<ConstantExpr> &RHS) {
-    return ConstantExpr::alloc(value - RHS->value);
+
+    uint64_t places = getWidth() == Expr::Fl32 ? fractional_places : 2 * fractional_places;
+    // Get whole result then add extra bit for rounding
+    llvm::APInt intermediate = value.sext(getWidth() + places) * RHS->value.sext(getWidth() + places);
+    return ConstantExpr::alloc(intermediate.trunc(getWidth()) + (intermediate.ashr(places - 1) & 1));
 }
 ref<ConstantExpr> ConstantExpr::FDiv(const ref<ConstantExpr> &RHS) {
-    return ConstantExpr::alloc(value.sdiv(RHS->value));
+    uint64_t places = getWidth() == Expr::Fl32 ? fractional_places : 2 * fractional_places;
+    llvm::APInt intermediate = value.sext(getWidth() + places + 1) * llvm::APInt::getSignMask(places);
+    return ConstantExpr::alloc(intermediate.sdiv(RHS->value));
 }
 ref<ConstantExpr> ConstantExpr::FRem(const ref<ConstantExpr> &RHS) {
     return ConstantExpr::alloc(value.srem(RHS->value));

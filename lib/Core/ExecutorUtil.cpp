@@ -44,11 +44,9 @@ namespace klee {
       return evalConstantExpr(ce, ki);
     } else {
       if (const ConstantInt *ci = dyn_cast<ConstantInt>(c)) {
-        klee_message("Integer constant: %li", ci->getSExtValue());
         return ConstantExpr::alloc(ci->getValue());
       } else if (const ConstantFP *cf = dyn_cast<ConstantFP>(c)) {
-        klee_message("Float constant: %f", cf->getValueAPF().convertToFloat());
-        return ConstantExpr::alloc(55, Expr::Fl32);
+        return ConstantExpr::alloc(cf->getValueAPF());
         //return FConstantExpr::alloc(cf->getValueAPF().bitcastToAPInt());
       } else if (const GlobalValue *gv = dyn_cast<GlobalValue>(c)) {
         auto it = globalAddresses.find(gv);
